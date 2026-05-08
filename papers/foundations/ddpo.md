@@ -1,6 +1,6 @@
 # DDPO — Training Diffusion Models with Reinforcement Learning
 
-> Notation: follows [NOTATION.md](../NOTATION.md) §7 (MDP) and §4 (policy). Uses DDPM convention: $\epsilon_\theta$, discrete $t \in \{1,\ldots,T\}$.
+> Notation: follows [NOTATION.md](../NOTATION.md) §7 (MDP) and §4 (policy). Uses DDPM convention: $\epsilon_\theta$, discrete $t \in \lbrace1,\ldots,T\rbrace$.
 
 | Field | Value |
 |---|---|
@@ -24,8 +24,9 @@ Diffusion models maximise data likelihood, but downstream objectives (aesthetics
 ## Setting
 
 - **Model**: DDPM with noise predictor $\epsilon_\theta(x_t, t, c)$.
-- **Reverse process** (policy): $\pi_\theta(x_{t-1} \mid x_t, c) = \mathcal{N}(x_{t-1};\, \mu_\theta(x_t,t,c),\, \tilde\beta_t I)$ where
-$$\mu_\theta(x_t,t,c) = \frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t}{1-\bar\alpha_t}\,\hat x_0 + \frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}\,x_t, \qquad \hat x_0 = \frac{x_t - \sigma_t\,\epsilon_\theta(x_t,t,c)}{\sqrt{\bar\alpha_t}}$$
+- **Reverse process** (policy): $\pi_\theta(x_{t-1} \mid x_t, c) = \mathcal{N}(x_{t-1}; \mu_\theta(x_t,t,c), \tilde\beta_t I)$ where
+
+$$\mu_\theta(x_t,t,c) = \frac{\sqrt{\bar\alpha_{t-1}}\beta_t}{1-\bar\alpha_t}\hat x_0 + \frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t, \qquad \hat x_0 = \frac{x_t - \sigma_t\epsilon_\theta(x_t,t,c)}{\sqrt{\bar\alpha_t}}$$
 - **Reward**: $r(x_0, c) \in \mathbb{R}$, black-box, evaluated once per trajectory.
 
 ---
@@ -34,7 +35,7 @@ $$\mu_\theta(x_t,t,c) = \frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t}{1-\bar\alpha_t}\
 
 Standard DDPM ancestral sampling:
 
-$$x_{t-1} = \mu_\theta(x_t, t, c) + \tilde\beta_t^{1/2}\, \epsilon_t, \quad \epsilon_t \sim \mathcal{N}(0,I), \quad t = T, T{-}1, \ldots, 1$$
+$$x_{t-1} = \mu_\theta(x_t, t, c) + \tilde\beta_t^{1/2} \epsilon_t, \quad \epsilon_t \sim \mathcal{N}(0,I), \quad t = T, T{-}1, \ldots, 1$$
 
 starting from $x_T \sim \mathcal{N}(0,I)$. At $t=0$ the sample $x_0$ is returned and evaluated.
 
@@ -50,21 +51,22 @@ Given $x_0$ and prompt $c$, any scalar reward model $r : \mathbb{R}^d \times \ma
 
 ## Training objectives
 
-### DDPO$_\text{SF}$ — REINFORCE ("score function" estimator)
+### $\mathrm{DDPO}_{\text{SF}}$ — REINFORCE ("score function" estimator)
 
 Unbiased but high-variance. Backprop through $\log \pi_\theta$ at every denoising step:
 
-$$\mathcal{L}_\text{SF}(\theta) = -\mathbb{E}_{c, x_T, \{x_{t-1}\}}\left[\sum_{t=1}^{T} \log \pi_\theta(x_{t-1} \mid x_t, c) \cdot r(x_0, c)\right]$$
+$$\mathcal{L}_\text{SF}(\theta) = -\mathbb{E}_{c, x_T, \lbrace x_{t-1}\rbrace}\left[\sum_{t=1}^{T} \log \pi_\theta(x_{t-1} \mid x_t, c) \cdot r(x_0, c)\right]$$
 
 Since $\tilde\beta_t$ is fixed, $\log \pi_\theta(x_{t-1} \mid x_t, c) \propto -\Vert x_{t-1} - \mu_\theta(x_t,t,c)\Vert^2 / (2\tilde\beta_t)$, giving an MSE-like per-step gradient.
 
-### DDPO$_\text{IS}$ — Importance-sampling PPO (recommended)
+### $\mathrm{DDPO}_{\text{IS}}$ — Importance-sampling PPO (recommended)
 
 Collect a trajectory with frozen $\theta_\text{old}$, then run $K$ gradient steps reusing the same data:
 
 $$\mathcal{L}_\text{IS}(\theta) = -\mathbb{E}\left[\sum_{t=1}^{T} \rho_t \cdot r(x_0, c)\right], \quad \rho_t = \frac{\pi_\theta(x_{t-1} \mid x_t, c)}{\pi_{\theta_\text{old}}(x_{t-1} \mid x_t, c)}$$
 
 The IS ratio is tractable because each step is Gaussian:
+
 $$\log \rho_t = \frac{\Vert x_{t-1} - \mu_{\theta_\text{old}}\Vert^2 - \Vert x_{t-1} - \mu_\theta\Vert^2}{2\tilde\beta_t}$$
 
 A clipped variant (analogous to PPO) applies $\text{clip}(\rho_t, 1-\epsilon, 1+\epsilon)$ to bound the update.
@@ -73,7 +75,7 @@ A clipped variant (analogous to PPO) applies $\text{clip}(\rho_t, 1-\epsilon, 1+
 
 ### KL regularisation (optional)
 
-$$\mathcal{L}_\text{KL}(\theta) = \beta\, \mathbb{E}\left[\sum_{t=1}^T D_\text{KL}\left(\pi_\theta(\cdot \mid x_t, c) \,\Vert\, \pi_\text{ref}(\cdot \mid x_t, c)\right)\right]$$
+$$\mathcal{L}_\text{KL}(\theta) = \beta \mathbb{E}\left[\sum_{t=1}^T D_\text{KL}\left(\pi_\theta(\cdot \mid x_t, c) \Vert \pi_\text{ref}(\cdot \mid x_t, c)\right)\right]$$
 
 ---
 

@@ -28,15 +28,16 @@ DGPO asks: **can we get group-level RL signal without a policy gradient at all?*
 - **Online**: generate a group of $N$ images per prompt each iteration using **any ODE sampler**.
 - **Reward**: $r(x_0^{(i)}, c) \in [0,1]$ for each generated image.
 - **Groups**: partition by advantage sign:
-  - $\mathcal{G}^{+} = \{i : \hat A^{(i)} > 0\}$ (above-mean images)
-  - $\mathcal{G}^- = \{i : \hat A^{(i)} \leq 0\}$ (below-mean images)
+  - $\mathcal{G}^{+} = \lbrace i : \hat A^{(i)} > 0\rbrace$ (above-mean images)
+  - $\mathcal{G}^- = \lbrace i : \hat A^{(i)} \leq 0\rbrace$ (below-mean images)
 
 ---
 
 ## Sampling (inference)
 
 Any deterministic ODE sampler:
-$$x_{t-\Delta t} = x_t - v_\theta(x_t, t, c)\,\Delta t \quad \text{(flow)} \quad \text{or} \quad x_{t-1} = \text{DDIM}_\theta(x_t, t, c)$$
+
+$$x_{t-\Delta t} = x_t - v_\theta(x_t, t, c)\Delta t \quad \text{(flow)} \quad \text{or} \quad x_{t-1} = \text{DDIM}_\theta(x_t, t, c)$$
 
 **No SDE required.** This is the key efficiency gain.
 
@@ -45,12 +46,15 @@ $$x_{t-\Delta t} = x_t - v_\theta(x_t, t, c)\,\Delta t \quad \text{(flow)} \quad
 ## Reward and advantage calculation
 
 Same group-relative normalisation as GRPO:
-$$\hat A^{(i)} = \frac{r^{(i)} - \overline r}{\text{std}(\{r^{(j)}\}) + \delta}$$
+
+$$\hat A^{(i)} = \frac{r^{(i)} - \overline r}{\text{std}(\lbrace r^{(j)}\rbrace) + \delta}$$
 
 Positive/negative partition:
-$$\mathcal{G}^{+} = \{i : \hat A^{(i)} > 0\}, \quad \mathcal{G}^- = \{i : \hat A^{(i)} \leq 0\}$$
+
+$$\mathcal{G}^{+} = \lbrace i : \hat A^{(i)} > 0\rbrace, \quad \mathcal{G}^- = \lbrace i : \hat A^{(i)} \leq 0\rbrace$$
 
 Sample weights (must satisfy $\sum_{i \in \mathcal{G}^{+}} w^{+}(i) = \sum_{j \in \mathcal{G}^-} w^-(j)$ to cancel the partition function):
+
 $$w^{+}(i) \propto |\hat A^{(i)}|, \quad w^-(j) \propto |\hat A^{(j)}|, \quad \text{renormalised}$$
 
 ---
@@ -60,16 +64,19 @@ $$w^{+}(i) \propto |\hat A^{(i)}|, \quad w^-(j) \propto |\hat A^{(j)}|, \quad \t
 ### Step 1 — Log-ratio via ELBO
 
 The intractable marginal log-ratio decomposes via the ELBO (see [NOTATION.md §6](../NOTATION.md)):
+
 $$\log \frac{\pi_\theta(x_0 \mid c)}{\pi_{\theta_\text{ref}}(x_0 \mid c)} \approx -\mathbb{E}_t\left[\underbrace{\Vert\epsilon_\theta(x_t,t,c) - \epsilon\Vert^2}_{\mathcal{L}_\theta(x_0)} - \underbrace{\Vert\epsilon_{\theta_\text{ref}}(x_t,t,c) - \epsilon\Vert^2}_{\mathcal{L}_{\theta_\text{ref}}(x_0)}\right]$$
 
-where $x_t = \sqrt{\bar\alpha_t}\, x_0 + \sigma_t\,\epsilon$ and the expectation is over $t$ and $\epsilon$.
+where $x_t = \sqrt{\bar\alpha_t} x_0 + \sigma_t\epsilon$ and the expectation is over $t$ and $\epsilon$.
 
 ### Step 2 — Group Bradley-Terry objective
 
 Model group preference with a Bradley-Terry log-likelihood:
-$$\max_\theta\; \mathbb{E}\left[\log \sigma\left(R_\theta(\mathcal{G}^{+} \mid c) - R_\theta(\mathcal{G}^- \mid c)\right)\right]$$
+
+$$\max_\theta \mathbb{E}\left[\log \sigma\left(R_\theta(\mathcal{G}^{+} \mid c) - R_\theta(\mathcal{G}^- \mid c)\right)\right]$$
 
 where the group-level reward proxy is:
+
 $$R_\theta(\mathcal{G} \mid c) = \sum_{i \in \mathcal{G}} w(i) \cdot \log \frac{\pi_\theta(x_0^{(i)} \mid c)}{\pi_{\theta_\text{ref}}(x_0^{(i)} \mid c)}$$
 
 The partition function of the Bradley-Terry model cancels when $\sum_{\mathcal{G}^{+}} w^{+}(i) = \sum_{\mathcal{G}^-} w^-(j)$, giving a tractable objective.
@@ -79,10 +86,11 @@ The partition function of the Bradley-Terry model cancels when $\sum_{\mathcal{G
 Substituting the ELBO log-ratio:
 
 $$\boxed{
-\mathcal{L}_\text{DGPO}(\theta) = -\mathbb{E}_{t,\epsilon}\left[\log \sigma\left(\sum_{i \in \mathcal{G}^{+}} w^{+}(i)\,\Delta\mathcal{L}_i - \sum_{j \in \mathcal{G}^-} w^-(j)\,\Delta\mathcal{L}_j\right)\right]
+\mathcal{L}_\text{DGPO}(\theta) = -\mathbb{E}_{t,\epsilon}\left[\log \sigma\left(\sum_{i \in \mathcal{G}^{+}} w^{+}(i)\Delta\mathcal{L}_i - \sum_{j \in \mathcal{G}^-} w^-(j)\Delta\mathcal{L}_j\right)\right]
 }$$
 
 where:
+
 $$\Delta\mathcal{L}_i \triangleq \Vert\epsilon_{\theta_\text{ref}}(x_t^{(i)},t,c) - \epsilon^{(i)}\Vert^2 - \Vert\epsilon_\theta(x_t^{(i)},t,c) - \epsilon^{(i)}\Vert^2$$
 
 (positive when $\theta$ is better than $\theta_\text{ref}$ at denoising $x_0^{(i)}$).
@@ -95,7 +103,7 @@ $$\Delta\mathcal{L}_i \triangleq \Vert\epsilon_{\theta_\text{ref}}(x_t^{(i)},t,c
 
 DGPO's $\Delta\mathcal{L}_i$ is computed by:
 1. Taking the generated $x_0^{(i)}$ (from ODE sampling — any sampler)
-2. Independently sampling $t \sim \text{Uniform}\{t_\text{min}, T\}$ and $\epsilon^{(i)} \sim \mathcal{N}(0,I)$
+2. Independently sampling $t \sim \text{Uniform}\lbrace t_\text{min}, T\rbrace$ and $\epsilon^{(i)} \sim \mathcal{N}(0,I)$
 3. Computing $x_t^{(i)} = \sqrt{\bar\alpha_t} x_0^{(i)} + \sigma_t \epsilon^{(i)}$ via the **forward process**
 4. Evaluating the denoising MSE
 

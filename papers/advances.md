@@ -46,7 +46,8 @@ Papers that extend or diagnose the SDE-based GRPO family.
 **Problem**: Sequential rollouts in GRPO are slow; applying the same trajectory-level reward to all timesteps gives no per-step credit signal; low-value branches waste compute.
 
 **Approach**: Structures denoising as a **branching tree** rooted at a shared prefix. Branches split at selected timesteps to produce multiple candidate continuations from one shared trunk, amortizing early-step compute. Rewards are propagated upward via path-probability weighting to produce per-depth advantages:
-$$\hat A_t^{(i)} = \frac{\sum_{b: t \in b} p(b)\,R^{(b)}}{\sum_{b: t \in b} p(b)} - \overline R$$
+
+$$\hat A_t^{(i)} = \frac{\sum_{b: t \in b} p(b)R^{(b)}}{\sum_{b: t \in b} p(b)} - \overline R$$
 
 Only nodes in high-value branches receive gradient. Achieves ~55% compute reduction and +16% HPDv2.1 alignment vs. FlowGRPO.
 
@@ -56,8 +57,9 @@ Only nodes in high-value branches receive gradient. Achieves ~55% compute reduct
 
 **Problem**: Under sustained GRPO training, reward models over-fit to shortcut patterns (Goodhart's Law), especially in video generation where rewards span multiple quality axes. Reward saturation within groups removes the advantage signal.
 
-**Approach**: **Intra-group sparse filtering** across reward components: decomposes the scalar reward into $K$ aspect scores $\{r_k^{(i)}\}$ and retains per-aspect advantage only for the top-$m$ samples per group (sparsity mask $\mathcal{S}_k$):
-$$\hat A_k^{(i)} = \mathbf{1}[i \in \mathcal{S}_k]\cdot \frac{r_k^{(i)} - \overline r_k}{\text{std}(\{r_k^{(j)}\}) + \delta}$$
+**Approach**: **Intra-group sparse filtering** across reward components: decomposes the scalar reward into $K$ aspect scores $\lbrace r_k^{(i)}\rbrace$ and retains per-aspect advantage only for the top-$m$ samples per group (sparsity mask $\mathcal{S}_k$):
+
+$$\hat A_k^{(i)} = \mathbf{1}[i \in \mathcal{S}_k]\cdot \frac{r_k^{(i)} - \overline r_k}{\text{std}(\lbrace r_k^{(j)}\rbrace) + \delta}$$
 
 Combined advantage: $\hat A^{(i)} = \sum_k w_k \hat A_k^{(i)}$. Prevents any single reward axis from saturating; targets the weakest aspects per group.
 
@@ -70,6 +72,7 @@ Combined advantage: $\hat A^{(i)} = \sum_k w_k \hat A_k^{(i)}$. Prevents any sin
 **Problem**: GRPO reuses the same scalar advantage for every denoising step in a trajectory — no fine-grained credit. BranchGRPO reduces compute but still uses path-aggregated rewards rather than true step-level estimates.
 
 **Approach**: Recasts the full denoising process as a **search tree**. A single root noise $x_T$ branches into multiple children at strategically chosen timesteps; rewards are back-propagated through the tree to assign node-specific advantages:
+
 $$\hat A_t^\text{node} = R(\text{subtree}(t)) - V(x_t)$$
 
 where $V(x_t)$ is estimated by averaging sibling rewards. Multi-child branching yields multiple policy updates per forward pass. Achieves 2.4× training speedup vs. GRPO.
@@ -80,8 +83,9 @@ where $V(x_t)$ is estimated by averaging sibling rewards. Multi-child branching 
 
 **Problem**: Large group sizes $N$ reduce advantage variance but scale linearly in compute. Many samples cluster near the group mean (reward clustering), providing zero signal while consuming resources.
 
-**Approach**: **Optimal Variance Filtering (OVF)**: first *expand* to a large candidate group $N_\text{large}$, then *prune mid-generation* (not post-hoc) using latent features to identify and discard reward-clustered trajectories. The surviving group $\{x_0^{(i)}\}_{i \in \mathcal{S}}$ has much higher per-sample variance:
-$$\mathcal{S} = \arg\max_{|\mathcal{S}|=N_\text{keep}} \text{Var}(\{r^{(i)}\}_{i \in \mathcal{S}})$$
+**Approach**: **Optimal Variance Filtering (OVF)**: first *expand* to a large candidate group $N_\text{large}$, then *prune mid-generation* (not post-hoc) using latent features to identify and discard reward-clustered trajectories. The surviving group $\lbrace x_0^{(i)}\rbrace_{i \in \mathcal{S}}$ has much higher per-sample variance:
+
+$$\mathcal{S} = \arg\max_{|\mathcal{S}|=N_\text{keep}} \text{Var}(\lbrace r^{(i)}\rbrace_{i \in \mathcal{S}})$$
 
 OVF uses intermediate latent features (not final images) to predict reward clustering, enabling early abortion of low-signal branches.
 
@@ -93,6 +97,7 @@ OVF uses intermediate latent features (not final images) to predict reward clust
 
 **Key contributions**:
 1. **Dynamic-Group sampling**: group size $N_c$ adapts per prompt based on estimated reward standard deviation $\hat\sigma_c$:
+
 $$N_c = \left\lceil N_0 \cdot \frac{\hat\sigma_c}{\overline\sigma}\right\rceil$$
 2. **Step-level advantage**: derives per-step advantage estimates from the flow ODE dynamics (continuous-time stochastic calculus) rather than reusing the terminal advantage at all steps.
 
@@ -108,6 +113,7 @@ Achieves +38.4% GenEval improvement over SD3.5-M baseline.
 
 **Key contributions**:
 1. **Cluster-based exploratory reward**: spectral clustering over per-prompt generated images; samples in under-represented clusters receive a diversity bonus:
+
 $$r_\text{div}^{(i)} = \frac{1}{|\mathcal{C}(i)|} \cdot r_\text{quality}^{(i)}$$
 where $\mathcal{C}(i)$ is the cluster containing image $i$. Smaller clusters → larger bonus.
 2. **Structure-aware regularisation**: stronger KL penalty at early denoising steps (high-$t$) to preserve structural diversity; relaxed at late steps where fine-grained reward signal matters.
@@ -121,10 +127,12 @@ where $\mathcal{C}(i)$ is the cluster containing image $i$. Smaller clusters →
 **Problem**: GRPO applies SDE noise uniformly to all denoising steps. Low-entropy steps (where the model is near-deterministic) add noise but produce nearly indistinguishable rollouts, diluting reward signal. High-entropy steps (where the model is most uncertain) are under-exploited.
 
 **Approach**: Merge consecutive low-entropy steps into one effective high-entropy SDE step; apply ODE to the remainder. Entropy is measured via the velocity field divergence $\nabla \cdot v_\theta$:
-$$H_t = -\mathbb{E}[\log \pi_\theta(x_{t-\Delta t} | x_t)] \approx \frac{d}{2}\log(2\pi e\,\sigma_t^2\Delta t)$$
+
+$$H_t = -\mathbb{E}[\log \pi_\theta(x_{t-\Delta t} | x_t)] \approx \frac{d}{2}\log(2\pi e\sigma_t^2\Delta t)$$
 
 Steps with $H_t < H_\text{thresh}$ are merged. The merged step's noise is scaled to preserve total stochasticity:
-$$\sigma_\text{merged} = \sqrt{\sum_{k \in \text{merged}} \sigma_{t_k}^2\,\Delta t}$$
+
+$$\sigma_\text{merged} = \sqrt{\sum_{k \in \text{merged}} \sigma_{t_k}^2\Delta t}$$
 
 Focuses exploration budget where it has most discriminative effect on reward.
 
@@ -135,9 +143,10 @@ Focuses exploration budget where it has most discriminative effect on reward.
 **Problem**: Standard GRPO for image-to-video (I2V) generation provides only trajectory-level scalar advantages; video quality depends on temporal alignment between frames, which scalar rewards poorly capture.
 
 **Approach**: **Contrastive trajectory alignment** in latent space. Within each group, high-advantage video latent trajectories are attracted toward each other; low-advantage trajectories are repelled from high-advantage ones:
+
 $$\mathcal{L}_\text{contrast}(\theta) = -\sum_{i \in \mathcal{G}^{+}}\sum_{j \in \mathcal{G}^-} \log \frac{\exp(d(\mathbf{z}^{(i)}, \mathbf{z}^{(j)}) / \tau)}{\sum_{k} \exp(d(\mathbf{z}^{(i)}, \mathbf{z}^{(k)}) / \tau)}$$
 
-where $\mathbf{z}^{(i)} = \{x_{t_k}^{(i)}\}_{t_k \in T_\text{SDE}}$ is the latent trajectory and $d(\cdot,\cdot)$ is a trajectory similarity. Combined with GRPO loss and a memory bank for diversity.
+where $\mathbf{z}^{(i)} = \lbrace x_{t_k}^{(i)}\rbrace_{t_k \in T_\text{SDE}}$ is the latent trajectory and $d(\cdot,\cdot)$ is a trajectory similarity. Combined with GRPO loss and a memory bank for diversity.
 
 ---
 
@@ -149,7 +158,8 @@ where $\mathbf{z}^{(i)} = \{x_{t_k}^{(i)}\}_{t_k \in T_\text{SDE}}$ is the laten
 1. **Reward-concentrated sampling**: retain only trajectories with reward $r^{(i)} \in [\overline r - \alpha\sigma, \overline r + \alpha\sigma]$ for gradient computation (removes outlier-induced mode pull).
 2. **Stochastic prompt variation**: augment the conditioning $c$ with random variation $\tilde c = c + \delta c$ during rollout to expand the conditioning manifold.
 3. **Potential-based reward shaping**: add a diversity potential $\Phi(x_0^{(i)})$ to the reward that measures distance to previously-generated samples, preventing the policy from collapsing to already-visited modes:
-$$\tilde r^{(i)} = r^{(i)} + \lambda_\Phi\,\Phi(x_0^{(i)}), \quad \Phi(x_0) = \min_{j \in \mathcal{M}} d(x_0, x_0^{(j)})$$
+
+$$\tilde r^{(i)} = r^{(i)} + \lambda_\Phi\Phi(x_0^{(i)}), \quad \Phi(x_0) = \min_{j \in \mathcal{M}} d(x_0, x_0^{(j)})$$
 
 ---
 
@@ -159,11 +169,13 @@ $$\tilde r^{(i)} = r^{(i)} + \lambda_\Phi\,\Phi(x_0^{(i)}), \quad \Phi(x_0) = \m
 
 **Key contributions**:
 1. **ODE-based intermediate reward estimation**: at each step $t_k$, compute the Tweedie clean-image prediction $\hat x_0(x_{t_k})$ and evaluate the reward model on it as a proxy for step $t_k$'s contribution:
-$$r_{t_k}^{(i)} = R\left(\hat x_0(x_{t_k}^{(i)}),\, c\right), \quad \hat x_0 = x_t - t\,v_\theta(x_t,t,c)$$
+
+$$r_{t_k}^{(i)} = R\left(\hat x_0(x_{t_k}^{(i)}), c\right), \quad \hat x_0 = x_t - tv_\theta(x_t,t,c)$$
 2. **Reward-aware stochasticity calibration**: set the SDE noise coefficient $\sigma_{t_k}$ proportional to the expected reward gradient magnitude at step $t_k$, focusing exploration at high-impact steps.
 
 Step advantage:
-$$\hat A_{t_k}^{(i)} = \frac{r_{t_k}^{(i)} - \overline r_{t_k}}{\text{std}(\{r_{t_k}^{(j)}\}) + \delta}$$
+
+$$\hat A_{t_k}^{(i)} = \frac{r_{t_k}^{(i)} - \overline r_{t_k}}{\text{std}(\lbrace r_{t_k}^{(j)}\rbrace) + \delta}$$
 
 ---
 
@@ -175,6 +187,7 @@ $$\hat A_{t_k}^{(i)} = \frac{r_{t_k}^{(i)} - \overline r_{t_k}}{\text{std}(\{r_{
 
 **Approach**: Defines the pre-trained flow model as implicitly specifying a **video manifold** and enforces dual proximity constraints:
 - **Micro-constraint** (per step): the SDE noise is clipped so $x_{t-\Delta t}^\text{SDE}$ stays within $\delta_\text{micro}$ of the ODE trajectory $x_{t-\Delta t}^\text{ODE}$:
+
 $$\Vert x_{t-\Delta t}^\text{SDE} - x_{t-\Delta t}^\text{ODE}\Vert_2 \leq \delta_\text{micro}$$
 - **Macro-constraint** (rollout level): terminal frames must pass a quality gate ($R(x_0) \geq \tau_\text{macro}$) before contributing to the gradient.
 
@@ -197,10 +210,12 @@ Papers that extend or diagnose the ELBO / solver-agnostic family.
 **Approach**: Frames diffusion alignment as **iterative EM**:
 - **E-step** (test-time search): find a set of diverse high-reward samples from the variational posterior $q(x_0) \propto r(x_0) \cdot \pi_{\theta_\text{old}}(x_0)$ via MCMC or rejection sampling.
 - **M-step** (amortisation): minimise **forward KL** (mode-covering) from $q$ into $\pi_\theta$:
+
 $$\mathcal{L}_\text{M}(\theta) = D_\text{KL}(q \Vert \pi_\theta) = -\mathbb{E}_{x_0 \sim q}[\log \pi_\theta(x_0)] + \text{const}$$
 
 The forward KL is approximated via the ELBO (same trick as Diffusion-DPO):
-$$\mathcal{L}_\text{M}(\theta) \approx \mathbb{E}_{x_0 \sim q,\,t,\epsilon}\left[\Vert v_\theta(x_t,t,c) - u_t\Vert^2\right]$$
+
+$$\mathcal{L}_\text{M}(\theta) \approx \mathbb{E}_{x_0 \sim q,t,\epsilon}\left[\Vert v_\theta(x_t,t,c) - u_t\Vert^2\right]$$
 
 Works for both continuous (T2I) and discrete (DNA) domains without differentiable reward.
 
@@ -213,10 +228,12 @@ Works for both continuous (T2I) and discrete (DNA) domains without differentiabl
 **Problem**: RAFT-based methods (rejection sampling fine-tuning) shape only the terminal distribution $\pi(x_0)$; shaping at intermediate noise levels is theoretically suboptimal; no unified theory connects RAFT variants.
 
 **Approach**: Introduces the **GRAFT framework** (Generalised RAFT) showing that all RAFT variants implicitly minimise:
-$$\mathcal{L}_\text{GRAFT}(\theta) = D_\text{KL}(\tilde\pi \Vert \pi_\theta), \quad \tilde\pi(x_0) \propto \exp(R(x_0)/\beta)\,\pi_\text{ref}(x_0)$$
+
+$$\mathcal{L}_\text{GRAFT}(\theta) = D_\text{KL}(\tilde\pi \Vert \pi_\theta), \quad \tilde\pi(x_0) \propto \exp(R(x_0)/\beta)\pi_\text{ref}(x_0)$$
 
 **P-GRAFT** extends this by shaping intermediate distributions $\tilde\pi_t(x_t)$ at noise level $t$, not just at $t=0$:
-$$\mathcal{L}_\text{P-GRAFT}(\theta) = \sum_t \lambda_t\,D_\text{KL}(\tilde\pi_t \Vert \pi_\theta^t)$$
+
+$$\mathcal{L}_\text{P-GRAFT}(\theta) = \sum_t \lambda_tD_\text{KL}(\tilde\pi_t \Vert \pi_\theta^t)$$
 
 The bias-variance tradeoff is analysed: intermediate shaping has higher bias but lower variance than terminal-only shaping. Extended to flow model error correction.
 
@@ -230,9 +247,11 @@ The bias-variance tradeoff is analysed: intermediate shaping has higher bias but
 
 **Approach**:
 - **Critic**: trains a value function $V_\phi(x_t, t, c)$ on intermediate states via reward shaping for stable convergence:
+
 $$V_\phi(x_t,t,c) = \mathbb{E}_{x_0 | x_t}\left[R(x_0,c)\right]$$
 - **Wasserstein diversity regularisation**: penalises the 2-Wasserstein distance between the generated distribution and a reference in reward-weighted feature space:
-$$\mathcal{L}_\text{div}(\theta) = W_2(\pi_\theta,\,\pi_\text{ref})$$
+
+$$\mathcal{L}_\text{div}(\theta) = W_2(\pi_\theta,\pi_\text{ref})$$
 - **Dual stability**: advantage clipping + critic warm-up to prevent Q-value collapse in early training.
 
 Actor update uses the intermediate advantage $\hat A_t^{(i)} = R^{(i)} - V_\phi(x_t^{(i)}, t, c)$ weighted by the flow matching loss.
@@ -246,10 +265,12 @@ Actor update uses the intermediate advantage $\hat A_t^{(i)} = R^{(i)} - V_\phi(
 **Problem**: On-policy KL regularisation against a fixed reference policy is the primary cause of reward hacking (quality degradation, over-stylisation, diversity loss) in DDPO/FlowGRPO-style training. This is confirmed at scale (>1M GPU-hours of video generation training).
 
 **Approach**: Replace on-policy KL with **forward KL to an off-policy data distribution** $p_\text{data}$. The standard diffusion training loss is exactly the forward KL:
-$$\mathcal{L}_\text{diff}(\theta) = \mathbb{E}_{x_0 \sim p_\text{data},\,t,\epsilon}\left[\Vert v_\theta(x_t,t,c) - u_t\Vert^2\right] = D_\text{KL}(p_\text{data} \Vert \pi_\theta) + \text{const}$$
+
+$$\mathcal{L}_\text{diff}(\theta) = \mathbb{E}_{x_0 \sim p_\text{data},t,\epsilon}\left[\Vert v_\theta(x_t,t,c) - u_t\Vert^2\right] = D_\text{KL}(p_\text{data} \Vert \pi_\theta) + \text{const}$$
 
 Combined objective:
-$$\mathcal{L}_\text{DDRL}(\theta) = -\mathbb{E}_{x_0 \sim \pi_\theta}[R(x_0,c)] + \alpha\,\mathcal{L}_\text{diff}(\theta)$$
+
+$$\mathcal{L}_\text{DDRL}(\theta) = -\mathbb{E}_{x_0 \sim \pi_\theta}[R(x_0,c)] + \alpha\mathcal{L}_\text{diff}(\theta)$$
 
 The reward term is on-policy; the data-regularisation term is off-policy, providing an unbiased anchor that prevents reward hacking. Scales to image and video generation.
 
@@ -264,7 +285,8 @@ The reward term is on-policy; the data-regularisation term is off-policy, provid
 **Key contributions**:
 1. **Training-free soft Q-function**: estimate $Q_\text{soft}(x_t, a_t)$ from the current model via the Bellman equation, using **consistency models** to efficiently predict $x_0$ from $x_t$ for value bootstrapping.
 2. **Discounted denoising**: introduces discount factor $\gamma < 1$ so later denoising steps (closer to $x_0$) receive higher weight:
-$$Q_t = r_t + \gamma\,V_{t-1}, \quad V_t = \mathbb{E}_{x_{t-1}|x_t}[Q_{t-1}]$$
+
+$$Q_t = r_t + \gammaV_{t-1}, \quad V_t = \mathbb{E}_{x_{t-1}|x_t}[Q_{t-1}]$$
 3. **Off-policy replay buffer**: stores (trajectory, reward) pairs across iterations; combined with on-policy samples to improve mode coverage.
 
 Policy gradient: $\nabla_\theta \mathcal{L} = \mathbb{E}[\nabla_\theta \log \pi_\theta(x_{t-1}|x_t) \cdot Q_\text{soft}(x_t, x_{t-1})]$.
@@ -279,7 +301,8 @@ Policy gradient: $\nabla_\theta \mathcal{L} = \mathbb{E}[\nabla_\theta \log \pi_
 
 **Approach**:
 1. **Uncertainty-gated KL**: measure per-sample uncertainty $u^{(i)} = \text{Var}_{t,\epsilon}[\hat A^{(i)}(x_t)]$; apply KL penalty only where $u^{(i)} > u_\text{thresh}$:
-$$\mathcal{L}_\text{GARDO}(\theta) = \mathcal{L}_\text{GRPO}(\theta) - \beta\,\mathbb{E}\left[\mathbf{1}[u^{(i)} > u_\text{thresh}]\,D_\text{KL}(\pi_\theta(x_0)\Vert\pi_\text{ref}(x_0))\right]$$
+
+$$\mathcal{L}_\text{GARDO}(\theta) = \mathcal{L}_\text{GRPO}(\theta) - \beta\mathbb{E}\left[\mathbf{1}[u^{(i)} > u_\text{thresh}]D_\text{KL}(\pi_\theta(x_0)\Vert\pi_\text{ref}(x_0))\right]$$
 2. **Diversity-aware advantage shaping**: adds a novelty bonus to $\hat A^{(i)}$ for samples that differ from recently-generated images, encouraging exploration of new modes.
 
 Acts as a plug-in wrapper compatible with any base GRPO/ELBO algorithm.
@@ -293,6 +316,7 @@ Acts as a plug-in wrapper compatible with any base GRPO/ELBO algorithm.
 **Approach**: Frames diffusion alignment as **Sequential Monte Carlo (SMC)**: the denoising model is a proposal $\pi_\theta$; the reward-tilted distribution $\tilde\pi \propto R \cdot \pi_\text{ref}$ is the target; importance weights $w^{(i)} = \tilde\pi(x_0^{(i)})/\pi_\theta(x_0^{(i)})$ measure how well $\pi_\theta$ covers $\tilde\pi$.
 
 **VMPO objective**: minimise the variance of log importance weights:
+
 $$\mathcal{L}_\text{VMPO}(\theta) = \text{Var}_{x_0 \sim \pi_\theta}\left[\log\frac{\tilde\pi(x_0)}{\pi_\theta(x_0)}\right]$$
 
 **Key theorem**: under on-policy sampling, $\nabla_\theta \mathcal{L}_\text{VMPO} = \nabla_\theta D_\text{KL}(\tilde\pi \Vert \pi_\theta)$, establishing equivalence with KL alignment on-policy. Off-policy, VMPO provides a correction term that reduces variance without mode-seeking bias.
@@ -306,12 +330,14 @@ $$\mathcal{L}_\text{VMPO}(\theta) = \text{Var}_{x_0 \sim \pi_\theta}\left[\log\f
 **Problem**: RL for few-step (2–4 step) diffusion models. Non-differentiable rewards (binary human preference, object counts, OCR correctness) cannot be directly backpropagated; no surrogate reward learning framework exists for fast ODE samplers.
 
 **Approach**: Decouples into two stages:
-1. **Surrogate reward learning** via DGPO-style group preference optimisation on deterministic ODE trajectories. For each prompt, generate a group of $N$ images $\{x_0^{(i)}\}$; the surrogate reward $\hat R_\psi$ is trained to predict group-relative rankings using the ELBO log-ratio as the policy model:
+1. **Surrogate reward learning** via DGPO-style group preference optimisation on deterministic ODE trajectories. For each prompt, generate a group of $N$ images $\lbrace x_0^{(i)}\rbrace$; the surrogate reward $\hat R_\psi$ is trained to predict group-relative rankings using the ELBO log-ratio as the policy model:
+
 $$\mathcal{L}_\text{surr}(\psi) = -\mathbb{E}\left[\log \sigma\left(\hat R_\psi(x_0^{+}) - \hat R_\psi(x_0^-)\right)\right]$$
 2. **Generator training** guided by the surrogate:
-$$\mathcal{L}_\text{gen}(\theta) = -\mathbb{E}_{x_0 \sim \pi_\theta}\left[\hat R_\psi(x_0,c)\right] + \beta\,D_\text{KL}(\pi_\theta \Vert \pi_\text{ref})$$
 
-The key insight: ODE trajectory intermediate states $\{x_{t_k}\}$ provide unbiased, artifact-free intermediate value estimates (no SDE needed). Achieves GenEval 61% → 92% with only 4 denoising steps, surpassing the 40-step base model (63%) and GPT-4o (84%).
+$$\mathcal{L}_\text{gen}(\theta) = -\mathbb{E}_{x_0 \sim \pi_\theta}\left[\hat R_\psi(x_0,c)\right] + \betaD_\text{KL}(\pi_\theta \Vert \pi_\text{ref})$$
+
+The key insight: ODE trajectory intermediate states $\lbrace x_{t_k}\rbrace$ provide unbiased, artifact-free intermediate value estimates (no SDE needed). Achieves GenEval 61% → 92% with only 4 denoising steps, surpassing the 40-step base model (63%) and GPT-4o (84%).
 
 ---
 

@@ -1,7 +1,7 @@
 # SRPO — Directly Aligning the Full Diffusion Trajectory with Fine-Grained Human Preference
 
 > Notation: follows [NOTATION.md](../NOTATION.md). Target model is FLUX.1-dev (flow matching).  
-> For flow matching: $x_t = (1-t)\,x_0 + t\,\epsilon$, so $\alpha_t = 1-t$, $\sigma_t = t$.  
+> For flow matching: $x_t = (1-t)x_0 + t\epsilon$, so $\alpha_t = 1-t$, $\sigma_t = t$.  
 > Local symbol: $\epsilon_\text{gt}$ — the ground-truth noise used in the forward pass, held fixed as a per-image training prior.
 
 | Field | Value |
@@ -36,27 +36,27 @@ SRPO introduces two components that address each problem independently: **Direct
 
 The forward process places $x_t$ on a linear interpolation between $x_0$ and $\epsilon$:
 
-$$x_t = \alpha_t\,x_0 + \sigma_t\,\epsilon_\text{gt}$$
+$$x_t = \alpha_tx_0 + \sigma_t\epsilon_\text{gt}$$
 
 If the noise $\epsilon_\text{gt}$ used to construct $x_t$ is known, the clean image is recovered in **one closed-form step** — no network denoising required:
 
-$$\hat x_0 = \frac{x_t - \sigma_t\,\epsilon_\text{gt}}{\alpha_t}$$
+$$\hat x_0 = \frac{x_t - \sigma_t\epsilon_\text{gt}}{\alpha_t}$$
 
-For flow matching (FLUX): $\alpha_t = 1-t$, $\sigma_t = t$, so $\hat x_0 = \dfrac{x_t - t\,\epsilon_\text{gt}}{1-t}$.
+For flow matching (FLUX): $\alpha_t = 1-t$, $\sigma_t = t$, so $\hat x_0 = \dfrac{x_t - t\epsilon_\text{gt}}{1-t}$.
 
 This uses the same structure as Tweedie's formula in [NOTATION.md §3](../NOTATION.md), but substitutes the **known** $\epsilon_\text{gt}$ instead of the network's noise prediction, making it exact and gradient-free on the denoising path.
 
 ### Training procedure
 
 1. Fix a **noise prior** $\epsilon_\text{gt} \sim \mathcal{N}(0,I)$ per image at the start of training (held constant throughout).
-2. At each training step, sample a timestep $t$ uniformly; construct $x_t = (1-t)\,x_0 + t\,\epsilon_\text{gt}$.
+2. At each training step, sample a timestep $t$ uniformly; construct $x_t = (1-t)x_0 + t\epsilon_\text{gt}$.
 3. Apply one network forward pass to obtain $v_\theta(x_t, t, c)$.
 4. Recover $\hat x_0$ via the closed-form equation above.
 5. Score $\hat x_0$ with the reward model; backpropagate the reward gradient through the single closed-form step to $v_\theta$.
 
 Gradient flows through exactly **one network call** per timestep — no rollout, no iterative denoising. Multiple timesteps are aggregated with a decaying discount:
 
-$$\mathcal{L}_\text{DA}(\theta) = -\mathbb{E}_t\left[\gamma^{T-t}\,r(\hat x_0(x_t, \epsilon_\text{gt}),\,c)\right]$$
+$$\mathcal{L}_\text{DA}(\theta) = -\mathbb{E}_t\left[\gamma^{T-t}r(\hat x_0(x_t, \epsilon_\text{gt}),c)\right]$$
 
 where $\gamma \in (0,1]$ down-weights very early (high-noise) timesteps where recovery is less precise.
 
@@ -92,7 +92,7 @@ where:
 
 ## Combined Training Objective
 
-$$\mathcal{L}_\text{SRPO}(\theta) = -\mathbb{E}_{c,\,t,\,\epsilon_\text{gt}}\left[\gamma^{T-t}\,r_\text{SRP}\left(\hat x_0(x_t, \epsilon_\text{gt}),\,c\right)\right] + \lambda\,\mathcal{L}_\text{inv}(\theta)$$
+$$\mathcal{L}_\text{SRPO}(\theta) = -\mathbb{E}_{c,t,\epsilon_\text{gt}}\left[\gamma^{T-t}r_\text{SRP}\left(\hat x_0(x_t, \epsilon_\text{gt}),c\right)\right] + \lambda\mathcal{L}_\text{inv}(\theta)$$
 
 where $\mathcal{L}_\text{inv}$ is the inversion regularization term and $\lambda$ balances reward vs. regularization.
 

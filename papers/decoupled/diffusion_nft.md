@@ -37,7 +37,8 @@ DiffusionNFT sidesteps all three by moving to the **forward (noising) direction*
 ## Sampling (inference)
 
 Any deterministic ODE sampler from $t=1$ to $t=0$:
-$$x_{t-\Delta t} = x_t - v_\theta(x_t, t, c)\,\Delta t$$
+
+$$x_{t-\Delta t} = x_t - v_\theta(x_t, t, c)\Delta t$$
 
 No SDE required. The sampler choice does not affect the training objective.
 
@@ -45,7 +46,8 @@ No SDE required. The sampler choice does not affect the training objective.
 
 ## Reward calculation
 
-Evaluate reward on the generated images $\{x_0^{(i)}\}$:
+Evaluate reward on the generated images $\lbrace x_0^{(i)}\rbrace$:
+
 $$r^{(i)} = r(x_0^{(i)}, c), \quad r^{(i)} \in [0,1]$$
 
 Normalise reward into per-batch weights (normalised to $[0,1]$ via min–max or rank-based rescaling so that $r=1$ is fully positive and $r=0$ is fully negative).
@@ -60,8 +62,9 @@ The complement $(1 - r^{(i)})$ acts as the negative weight for the same image.
 
 Rather than explicitly sampling from a reward-weighted distribution, DiffusionNFT defines **implicit positive/negative velocity fields** as linear interpolations around $v_{\theta_\text{old}}$:
 
-$$v_\theta^{+}(x_t, t, c) = (1-\beta)\,v_{\theta_\text{old}}(x_t,t,c) + \beta\, v_\theta(x_t,t,c)$$
-$$v_\theta^-(x_t, t, c) = (1+\beta)\,v_{\theta_\text{old}}(x_t,t,c) - \beta\, v_\theta(x_t,t,c)$$
+$$v_\theta^{+}(x_t, t, c) = (1-\beta)v_{\theta_\text{old}}(x_t,t,c) + \beta v_\theta(x_t,t,c)$$
+
+$$v_\theta^-(x_t, t, c) = (1+\beta)v_{\theta_\text{old}}(x_t,t,c) - \beta v_\theta(x_t,t,c)$$
 
 **Intuition**:
 - $v_\theta^{+}$ moves in the direction of the current update ($\theta - \theta_\text{old}$) — it represents the "improved" policy.
@@ -72,19 +75,22 @@ These are proxies for $\pi^{+}(x_0|c) \propto r \cdot \pi_{\theta_\text{old}}(x_
 ### Step 2 — Forward-noised training targets
 
 For each generated image $x_0^{(i)}$, construct forward-noised versions at random $t$:
-$$x_t^{(i)} = (1-t)\,x_0^{(i)} + t\,\epsilon^{(i)}, \quad \epsilon^{(i)} \sim \mathcal{N}(0,I)$$
+
+$$x_t^{(i)} = (1-t)x_0^{(i)} + t\epsilon^{(i)}, \quad \epsilon^{(i)} \sim \mathcal{N}(0,I)$$
 
 The clean velocity target is:
+
 $$u_t^{(i)} = x_0^{(i)} - \epsilon^{(i)}$$
 
 ### Step 3 — Contrastive flow matching loss
 
 $$\boxed{
-\mathcal{L}_\text{NFT}(\theta) = \mathbb{E}_{t,\epsilon}\left[\frac{1}{N}\sum_{i=1}^N \left(r^{(i)}\,\left\Vert v_\theta^{+}(x_t^{(i)},t,c) - u_t^{(i)}\right\Vert^2 + (1{-}r^{(i)})\,\left\Vert v_\theta^-(x_t^{(i)},t,c) - u_t^{(i)}\right\Vert^2\right)\right]
+\mathcal{L}_\text{NFT}(\theta) = \mathbb{E}_{t,\epsilon}\left[\frac{1}{N}\sum_{i=1}^N \left(r^{(i)}\left\Vert v_\theta^{+}(x_t^{(i)},t,c) - u_t^{(i)}\right\Vert^2 + (1{-}r^{(i)})\left\Vert v_\theta^-(x_t^{(i)},t,c) - u_t^{(i)}\right\Vert^2\right)\right]
 }$$
 
 Substituting the implicit policy definitions:
-$$= \mathbb{E}\left[\sum_i \left(r^{(i)}\,\Vert(1{-}\beta)v_\text{old} + \beta v_\theta - u_t^{(i)}\Vert^2 + (1{-}r^{(i)})\,\Vert(1{+}\beta)v_\text{old} - \beta v_\theta - u_t^{(i)}\Vert^2\right)\right]$$
+
+$$= \mathbb{E}\left[\sum_i \left(r^{(i)}\Vert(1{-}\beta)v_\text{old} + \beta v_\theta - u_t^{(i)}\Vert^2 + (1{-}r^{(i)})\Vert(1{+}\beta)v_\text{old} - \beta v_\theta - u_t^{(i)}\Vert^2\right)\right]$$
 
 **Why this works**: minimising over $v_\theta$ pushes $v_\theta^{+}$ toward the target for *high*-reward images and $v_\theta^-$ toward the target for *low*-reward images. Because $v_\theta^{+}$ is a positive perturbation of $v_\text{old}$ and $v_\theta^-$ is a negative perturbation, training jointly causes $v_\theta$ to deviate from $v_\text{old}$ in the direction that increases reward.
 
@@ -95,7 +101,8 @@ $$= \mathbb{E}\left[\sum_i \left(r^{(i)}\,\Vert(1{-}\beta)v_\text{old} + \beta v
 ## Reference policy update
 
 Because $v_{\theta_\text{old}}$ appears inside the loss, it must track $v_\theta$ over training. A scheduled EMA update:
-$$\theta_\text{old} \leftarrow \eta_i\,\theta_\text{old} + (1-\eta_i)\,\theta$$
+
+$$\theta_\text{old} \leftarrow \eta_i\theta_\text{old} + (1-\eta_i)\theta$$
 
 where $\eta_i \to 1$ as training progresses (warm-up to near-identity update). This keeps $v_\theta^{\pm}$ meaningful perturbations rather than arbitrary functions.
 

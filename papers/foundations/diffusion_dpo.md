@@ -23,7 +23,7 @@ RLHF for diffusion is complex (train reward model → PPO, expensive). DPO for l
 
 ## Setting
 
-- **Data**: preference dataset $\mathcal{D} = \{(c, x_0^w, x_0^l)\}$ — each triple has a prompt, a preferred image $x_0^w$, and a dispreferred image $x_0^l$.
+- **Data**: preference dataset $\mathcal{D} = \lbrace(c, x_0^w, x_0^l)\rbrace$ — each triple has a prompt, a preferred image $x_0^w$, and a dispreferred image $x_0^l$.
 - **Model**: DDPM with $\epsilon_\theta$; reference model $\epsilon_{\theta_\text{ref}}$ (frozen copy of pretrained checkpoint).
 - **Offline**: no generation during training; all trajectories are fixed.
 
@@ -32,7 +32,8 @@ RLHF for diffusion is complex (train reward model → PPO, expensive). DPO for l
 ## Sampling (inference)
 
 Standard DDPM (unchanged from pretrained model):
-$$x_{t-1} = \mu_\theta(x_t, t, c) + \tilde\beta_t^{1/2}\,\epsilon_t, \quad t = T,\ldots,1$$
+
+$$x_{t-1} = \mu_\theta(x_t, t, c) + \tilde\beta_t^{1/2}\epsilon_t, \quad t = T,\ldots,1$$
 
 Fine-tuning changes $\theta$, which shifts $\mu_\theta$, but the inference protocol is identical.
 
@@ -49,28 +50,32 @@ No explicit reward model. Instead, the **preference dataset** encodes human judg
 ### Step 1 — Standard DPO for LLMs (motivation)
 
 For sequences (LLMs), DPO avoids explicit RL by optimising:
+
 $$\mathcal{L}_\text{DPO}^\text{LLM}(\theta) = -\mathbb{E}_{(c,y^w,y^l)}\left[\log \sigma\left(\beta \log \frac{\pi_\theta(y^w \mid c)}{\pi_\text{ref}(y^w \mid c)} - \beta \log \frac{\pi_\theta(y^l \mid c)}{\pi_\text{ref}(y^l \mid c)}\right)\right]$$
 
 This is a Bradley-Terry classification: the model assigns higher log-probability to the preferred response under a KL-regularised objective. The optimal solution satisfies:
+
 $$\log \frac{\pi^{\ast}(y \mid c)}{\pi_\text{ref}(y \mid c)} = \frac{1}{\beta} r^{\ast}(y, c) - \log Z(c)$$
 
 ### Step 2 — Problem: $\log p_\theta(x_0 \mid c)$ is intractable
 
-For diffusion models, $p_\theta(x_0 \mid c) = \int p_\theta(x_{0:T} \mid c)\, dx_{1:T}$ marginalises over all $T$-step denoising paths — a high-dimensional integral with no closed form.
+For diffusion models, $p_\theta(x_0 \mid c) = \int p_\theta(x_{0:T} \mid c) dx_{1:T}$ marginalises over all $T$-step denoising paths — a high-dimensional integral with no closed form.
 
 ### Step 3 — ELBO lower bound
 
 Introduce latent variables $x_{1:T}$ and use the standard ELBO:
+
 $$\log p_\theta(x_0 \mid c) \geq \mathcal{E}_\theta(x_0, c) \triangleq \mathbb{E}_q\left[\sum_{t=1}^T \log \frac{p_\theta(x_{t-1} \mid x_t, c)}{q(x_{t-1} \mid x_t, x_0)}\right]$$
 
 where $q(x_t \mid x_0)$ is the forward noising process. This gives:
+
 $$\log \frac{p_\theta(x_0^w \mid c)}{p_\text{ref}(x_0^w \mid c)} \approx \mathcal{E}_\theta(x_0^w, c) - \mathcal{E}_{\theta_\text{ref}}(x_0^w, c)$$
 
 ### Step 4 — Denoising MSE form
 
 For a DDPM with Gaussian reverse steps, $\log p_\theta(x_{t-1} \mid x_t, c) = -\Vert x_{t-1} - \mu_\theta\Vert^2/(2\tilde\beta_t) + \text{const}$. The ELBO difference simplifies to:
 
-$$\mathcal{E}_\theta(x_0, c) - \mathcal{E}_{\theta_\text{ref}}(x_0, c) = -\mathbb{E}_t\left[\frac{T\,\omega(\lambda_t)}{2}\left(\Vert\epsilon_\theta(x_t,t,c) - \epsilon\Vert^2 - \Vert\epsilon_{\theta_\text{ref}}(x_t,t,c) - \epsilon\Vert^2\right)\right]$$
+$$\mathcal{E}_\theta(x_0, c) - \mathcal{E}_{\theta_\text{ref}}(x_0, c) = -\mathbb{E}_t\left[\frac{T\omega(\lambda_t)}{2}\left(\Vert\epsilon_\theta(x_t,t,c) - \epsilon\Vert^2 - \Vert\epsilon_{\theta_\text{ref}}(x_t,t,c) - \epsilon\Vert^2\right)\right]$$
 
 where $\omega(\lambda_t)$ is a signal-to-noise weighting, $x_t = \sqrt{\bar\alpha_t} x_0 + \sigma_t \epsilon$ is obtained by sampling $\epsilon$ and noising $x_0$.
 
@@ -81,6 +86,7 @@ $$\boxed{
 }$$
 
 where:
+
 $$\Delta\mathcal{L}(x_0) \triangleq \Vert\epsilon_{\theta_\text{ref}}(x_t,t,c) - \epsilon\Vert^2 - \Vert\epsilon_\theta(x_t,t,c) - \epsilon\Vert^2$$
 
 (positive when $\theta$ improves on $\theta_\text{ref}$ for this sample).
@@ -113,6 +119,7 @@ Repeat for each batch:
 ## Extension to flow matching
 
 For rectified-flow models (SD3, FLUX), replace the noise prediction MSE with the velocity prediction MSE:
+
 $$\Delta\mathcal{L}_\text{FM}(x_0) = \Vert v_{\theta_\text{ref}}(x_t,t,c) - u_t\Vert^2 - \Vert v_\theta(x_t,t,c) - u_t\Vert^2$$
 
 This is the "Flow-DPO" variant referenced in FlowGRPO ablations.

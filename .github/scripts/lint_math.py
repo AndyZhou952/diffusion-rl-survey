@@ -5,31 +5,50 @@ Lint LaTeX math in Markdown files for GitHub rendering compatibility.
 ROOT CAUSE
 ----------
 GitHub's Markdown parser (cmark-gfm) applies CommonMark backslash-escape
-processing to the content of $$...$$  math blocks before the math renderer
-(KaTeX) ever sees it.  All ASCII punctuation is escapable in CommonMark
-(! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \\ ] ^ _ { | } ~), so
-any LaTeX command whose delimiter is one of those characters will have its
-backslash silently stripped.
+processing AND structural Markdown rules to math blocks before KaTeX renders:
 
-The critical failure mode is \\|  (double vertical bar / norm):
-  \\|  →  |    (bare pipe triggers GitHub's pipe-table parser)
-The surrounding $$…$$ block is then re-parsed as a Markdown paragraph
-containing a pipe table, causing the entire formula to show as raw text.
+1. Backslash-escape stripping — all ASCII punctuation is escapable, so
+   LaTeX commands whose delimiter is ASCII punctuation have the backslash
+   silently stripped:
+     \\|  →  |    CRITICAL: bare | triggers the pipe-table parser, breaking
+                  the entire formula block.
+     \\{  →  {    Invisible grouping brace; with \\left\\{, produces the
+                  invalid sequence \\left{ which KaTeX rejects entirely.
+     \\}  →  }    Same — \\right\\} becomes \\right} (KaTeX error).
+     \\,  →  ,    Thin-space becomes a literal comma.
+     \\;  →  ;    Medium-space becomes a literal semicolon.
+     \\:  →  :    Medium-thick-space becomes a literal colon.
+     \\!  →  !    Negative space becomes a literal exclamation mark.
 
-Secondary issues:
-  \\!  → !   (renders an exclamation mark before the next bracket; ugly)
-  \\{  → {   (display brace becomes a LaTeX grouping brace; invisible)
-  \\}  → }   (same)
-  \\,  → ,   (spacing command becomes literal comma)
-  t^*  → t*  (Markdown emphasis eats the asterisk)
+2. Markdown emphasis inside failed blocks — when a $$ block fails to
+   render (e.g., due to KaTeX errors from the above), GitHub re-parses
+   the raw LaTeX as a Markdown paragraph.  Underscores (_) then trigger
+   italic emphasis, consuming subscript markers and mangling the output.
+
+3. Inline math starting with _ — $_{...}$ may not be recognised as an
+   inline math span on some GitHub rendering paths.  Move the whole
+   expression into math: $\\mathrm{DDPO}_{\\text{SF}}$ instead of
+   DDPO$_{\\text{SF}}$.
+
+4. Unbraced _\\text{word word} subscripts — in \\underbrace{A}_\\text{long
+   label}, the unbraced subscript with spaces can trigger CommonMark italic
+   parsing.  Use _{ \\text{long label} } instead.
+
+5. Missing blank line before $$ — GitHub block math requires $$ to open a
+   new block element.  A $$ immediately following non-blank text (in the
+   same CommonMark paragraph) may fall back to inline parsing and fail.
+   Always leave a blank line before display-math $$.
 
 FIXES
 -----
   \\|              → \\Vert (or \\lVert / \\rVert for explicit left/right)
-  \\!              → (remove)
-  \\{  \\}         → \\lbrace  \\rbrace
-  \\,  \\;  \\:    → (remove or accept cosmetic difference)
+  \\{  \\}         → \\lbrace  \\rbrace  (also fixes \\left\\{/\\right\\})
+  \\,  \\;  \\:    → remove entirely
+  \\!              → remove entirely
   ^*   ^+          → ^{\\ast}  ^{+}
+  _\\text{a b}     → _{\\text{a b}}  (add braces around multi-word labels)
+  X$_{\\text{SF}}$ → $\\mathrm{X}_{\\text{SF}}$  (avoid $_ inline-math start)
+  text:\\n$$       → text:\\n\\n$$  (blank line before display math)
 
 USAGE
 -----
@@ -51,54 +70,63 @@ from pathlib import Path
 
 CHECKS = [
     # -----------------------------------------------------------------------
-    # ERRORs — these reliably break GitHub rendering
+    # Sentinels — already-fixed forms; skip to avoid false positives
     # -----------------------------------------------------------------------
-    (
-        r'\\Vert|\\lVert|\\rVert',   # sentinel: already fixed — skip
-        None, None,
-    ),
+    (r'\\Vert|\\lVert|\\rVert', None, None),   # \| already replaced
+    (r'\\lbrace|\\rbrace', None, None),         # \{/\} already replaced
+
+    # -----------------------------------------------------------------------
+    # ERRORs — reliably break GitHub rendering
+    # -----------------------------------------------------------------------
     (
         r'\\\|',
         'ERROR',
-        r'\\| will be stripped to bare |, which triggers the pipe-table parser '
-        r'and breaks the math block. Use \\Vert (or \\lVert / \\rVert).',
+        r'\\| stripped to bare | → triggers pipe-table parser, breaks math block. '
+        r'Use \\Vert (or \\lVert / \\rVert).',
     ),
     (
         r'\^[\*\+](?![{a-zA-Z0-9])',
         'ERROR',
-        r'^* and ^+ without braces: * and + are CommonMark special chars. '
+        r'^* and ^+ without braces: * and + are CommonMark emphasis chars. '
         r'Use ^{\\ast} or ^{+}.',
     ),
+    (
+        r'\\[{]',
+        'ERROR',
+        r'\\{ stripped to { — with \\left\\{, produces invalid KaTeX \\left{. '
+        r'Use \\lbrace (and \\left\\lbrace / \\right\\rbrace).',
+    ),
+    (
+        r'\\[}]',
+        'ERROR',
+        r'\\} stripped to } — with \\right\\}, produces invalid KaTeX \\right}. '
+        r'Use \\rbrace (and \\left\\lbrace / \\right\\rbrace).',
+    ),
+    (
+        r'\\[,;:]',
+        'ERROR',
+        r'\\,  \\;  \\: are CommonMark escape sequences, stripped to literal '
+        r'punctuation (, ; :). This corrupts spacing and can trigger KaTeX '
+        r'parse errors inside \\mathcal{N}(...) and similar. Remove them.',
+    ),
     # -----------------------------------------------------------------------
-    # WARNings — degrade rendering quality but rarely cause full failure
+    # WARNings — degrade rendering or are risky but rarely cause total failure
     # -----------------------------------------------------------------------
     (
         r'\\!',
         'WARN',
-        r'\\! (negative thin space) is a CommonMark escape; it will be '
-        r'stripped to a literal !. Remove it — spacing is fine without it.',
+        r'\\! (negative thin space) stripped to literal !. Remove it.',
     ),
     (
-        r'\\[{]',
+        r'_\\text\{[^}]*\s[^}]*\}(?![^_]*\})',
         'WARN',
-        r'\\{ will be stripped to { (a grouping char, not a displayed brace). '
-        r'Use \\lbrace to display a curly brace.',
-    ),
-    (
-        r'\\[}]',
-        'WARN',
-        r'\\} will be stripped to } (a grouping char, not a displayed brace). '
-        r'Use \\rbrace to display a curly brace.',
-    ),
-    (
-        r'\\[,;:]',
-        'WARN',
-        r'\\,  \\;  \\: spacing commands are CommonMark escape sequences and '
-        r'will be stripped to literal punctuation. Remove them.',
+        r'_\\text{word word} without braces: multi-word \\text subscript can '
+        r'trigger CommonMark italic parsing when the block falls back to text. '
+        r'Use _{\\text{word word}} instead.',
     ),
 ]
 
-# Strip the sentinel entry (first tuple with severity=None)
+# Strip sentinel entries (severity=None)
 CHECKS = [(pat, sev, msg) for pat, sev, msg in CHECKS if sev is not None]
 
 
@@ -135,6 +163,37 @@ def extract_math_spans(text: str):
 
 
 # ---------------------------------------------------------------------------
+# Structural checks (file-level, not per-span)
+# ---------------------------------------------------------------------------
+
+def structural_issues(filepath: str, text: str) -> list:
+    """Check file-level structural problems that break GitHub math rendering."""
+    issues = []
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        # $$ must be preceded by a blank line (or be the first line)
+        if line.strip().startswith('$$') and i > 0:
+            prev = lines[i - 1].strip()
+            if prev:  # non-blank line immediately before $$
+                issues.append((
+                    filepath, i + 1, 'ERROR',
+                    'No blank line before $$: GitHub block math requires $$ to '
+                    'start a new paragraph. Add a blank line before this $$.',
+                    line.strip()[:100],
+                ))
+        # Inline math starting with _ (e.g., DDPO$_\text{SF}$)
+        for m in re.finditer(r'(?<!\$)\$_', line):
+            issues.append((
+                filepath, i + 1, 'WARN',
+                r'Inline math starting with _ (e.g., X$_\text{SF}$): '
+                r'GitHub may not recognise $_ as an inline-math delimiter. '
+                r'Move the full expression into math: $\mathrm{X}_{\text{SF}}$.',
+                line.strip()[:100],
+            ))
+    return issues
+
+
+# ---------------------------------------------------------------------------
 # Main lint logic
 # ---------------------------------------------------------------------------
 
@@ -150,8 +209,9 @@ def lint_file(filepath: str) -> list[Issue]:
             if re.search(pattern, math):
                 snippet = math.strip().replace('\n', ' ')[:100]
                 issues.append((filepath, line_no, severity, message, snippet))
-                # one report per check per span (avoid duplicate noise)
+                # one report per check per span
 
+    issues.extend(structural_issues(filepath, text))
     return issues
 
 
@@ -182,7 +242,6 @@ def main() -> int:
 
     for filepath, issues in sorted(by_file.items()):
         for fp, line, severity, message, snippet in issues:
-            # GitHub Actions annotation format
             annotation = 'error' if severity == 'ERROR' else 'warning'
             print(f'::{annotation} file={fp},line={line}::{severity}: {message}')
             print(f'  in: {snippet!r}')

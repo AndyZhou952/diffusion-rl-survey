@@ -15,7 +15,7 @@
 
 ## Motivation
 
-FlowGRPO/DanceGRPO add noise $s_t\sqrt{\Delta t}\,\epsilon$ to the ODE step to get a stochastic policy. This noise is **uncompensated**: the resulting $x_{t-\Delta t}$ has more noise than the flow schedule specifies, pushing it off the data manifold. Reward models trained on clean images cannot reliably score these artifact-laden samples — slowing convergence. CPS fixes this by deriving the stochastic step to **preserve the linear interpolation coefficients**, keeping $x_{t-\Delta t}$ on the flow manifold.
+FlowGRPO/DanceGRPO add noise $s_t\sqrt{\Delta t}\epsilon$ to the ODE step to get a stochastic policy. This noise is **uncompensated**: the resulting $x_{t-\Delta t}$ has more noise than the flow schedule specifies, pushing it off the data manifold. Reward models trained on clean images cannot reliably score these artifact-laden samples — slowing convergence. CPS fixes this by deriving the stochastic step to **preserve the linear interpolation coefficients**, keeping $x_{t-\Delta t}$ on the flow manifold.
 
 ---
 
@@ -23,10 +23,11 @@ FlowGRPO/DanceGRPO add noise $s_t\sqrt{\Delta t}\,\epsilon$ to the ODE step to g
 
 Flow matching forward process: $x_t = (1-t)x_0 + t\epsilon$. The noise level at step $t$ is $t$ (standard deviation in the noise direction).
 
-Standard ODE-to-SDE (FlowGRPO): adds $s_t\sqrt{\Delta t}\,\epsilon_t$ to the ODE step, giving total noise standard deviation at $t-\Delta t$:
-$$\sigma_\text{total} = \sqrt{(t-\Delta t)^2 + s_t^2\,\Delta t} > (t-\Delta t)$$
+Standard ODE-to-SDE (FlowGRPO): adds $s_t\sqrt{\Delta t}\epsilon_t$ to the ODE step, giving total noise standard deviation at $t-\Delta t$:
 
-The excess $\sqrt{s_t^2\,\Delta t}$ is the coefficient mismatch — the sample sits **above** the schedule manifold.
+$$\sigma_\text{total} = \sqrt{(t-\Delta t)^2 + s_t^2\Delta t} > (t-\Delta t)$$
+
+The excess $\sqrt{s_t^2\Delta t}$ is the coefficient mismatch — the sample sits **above** the schedule manifold.
 
 ---
 
@@ -35,24 +36,26 @@ The excess $\sqrt{s_t^2\,\Delta t}$ is the coefficient mismatch — the sample s
 Decompose $x_{t-\Delta t}$ into three orthogonal components that exactly match the linear interpolation at $t-\Delta t$:
 
 $$\boxed{
-x_{t-\Delta t}^{\text{CPS}} = \underbrace{(1-(t-\Delta t))}_{\lambda_{t-\Delta t}}\,\hat x_0 + \underbrace{\sqrt{(t-\Delta t)^2 - \sigma_t^2}}_{\text{noise direction, on manifold}}\,\hat x_1 + \underbrace{\sigma_t}_{\text{stochasticity}}\,\epsilon_t
+x_{t-\Delta t}^{\text{CPS}} = \underbrace{(1-(t-\Delta t))}_{\lambda_{t-\Delta t}}\hat x_0 + \underbrace{\sqrt{(t-\Delta t)^2 - \sigma_t^2}}_{\text{noise direction, on manifold}}\hat x_1 + \underbrace{\sigma_t}_{\text{stochasticity}}\epsilon_t
 }$$
 
 where:
-- $\hat x_0 = x_t - t\,v_\theta(x_t,t,c)$ — Tweedie predicted clean image
+- $\hat x_0 = x_t - tv_\theta(x_t,t,c)$ — Tweedie predicted clean image
 - $\hat x_1 = (x_t - (1-t)\hat x_0)/t = \epsilon$ — predicted noise direction
 - $\epsilon_t \sim \mathcal{N}(0,I)$ — fresh noise sample
-- $\sigma_t \in [0,\; t-\Delta t]$ — tunable stochasticity (0 = deterministic ODE; $t-\Delta t$ = full re-noise)
+- $\sigma_t \in [0, t-\Delta t]$ — tunable stochasticity (0 = deterministic ODE; $t-\Delta t$ = full re-noise)
 
 **Coefficient preservation**: the noise-direction coefficient is set so the total noise level equals exactly $t - \Delta t$:
-$$\underbrace{\sqrt{(t-\Delta t)^2 - \sigma_t^2}}_\text{old noise preserved} \oplus \underbrace{\sigma_t}_\text{new noise} \Rightarrow \sqrt{(t-\Delta t)^2 - \sigma_t^2 + \sigma_t^2} = t - \Delta t \checkmark$$
+
+$$\underbrace{\sqrt{(t-\Delta t)^2 - \sigma_t^2}}_{\text{old noise preserved}} \oplus \underbrace{\sigma_t}_{\text{new noise}} \Rightarrow \sqrt{(t-\Delta t)^2 - \sigma_t^2 + \sigma_t^2} = t - \Delta t \checkmark$$
 
 ---
 
 ## Connection to DDIM
 
 DDIM applies the same principle to DDPM. For DDPM with noise schedule $\bar\alpha_t$:
-$$x_{t-1}^{\text{DDIM}} = \sqrt{\bar\alpha_{t-1}}\,\hat x_0 + \sqrt{1-\bar\alpha_{t-1} - \eta^2\tilde\beta_t}\,\hat\epsilon + \eta\sqrt{\tilde\beta_t}\,\epsilon_t$$
+
+$$x_{t-1}^{\text{DDIM}} = \sqrt{\bar\alpha_{t-1}}\hat x_0 + \sqrt{1-\bar\alpha_{t-1} - \eta^2\tilde\beta_t}\hat\epsilon + \eta\sqrt{\tilde\beta_t}\epsilon_t$$
 
 Total noise variance: $(1-\bar\alpha_{t-1}-\eta^2\tilde\beta_t) + \eta^2\tilde\beta_t = 1-\bar\alpha_{t-1}$ ✓ (matches DDPM schedule). CPS is exactly the flow-matching analogue of stochastic DDIM.
 
@@ -61,11 +64,13 @@ Total noise variance: $(1-\bar\alpha_{t-1}-\eta^2\tilde\beta_t) + \eta^2\tilde\b
 ## Policy density
 
 CPS step is Gaussian — compatible with GRPO importance ratio:
-$$\pi_\theta^\text{CPS}(x_{t-\Delta t} \mid x_t, c) = \mathcal{N}\left(x_{t-\Delta t};\; (1-(t-\Delta t))\hat x_0 + \sqrt{(t-\Delta t)^2-\sigma_t^2}\,\hat x_1,\;\; \sigma_t^2\, I\right)$$
+
+$$\pi_\theta^\text{CPS}(x_{t-\Delta t} \mid x_t, c) = \mathcal{N}\left(x_{t-\Delta t}; (1-(t-\Delta t))\hat x_0 + \sqrt{(t-\Delta t)^2-\sigma_t^2}\hat x_1, \sigma_t^2 I\right)$$
 
 $$\log \pi_\theta^\text{CPS} = -\frac{\Vert x_{t-\Delta t} - \mu_\theta^\text{CPS}(x_t,t,c)\Vert^2}{2\sigma_t^2} + \text{const}$$
 
 Importance ratio (same formula as FlowGRPO, different $\mu$):
+
 $$\rho_t^{(i)} = \frac{\pi_\theta^\text{CPS}(x_{t-\Delta t}^{(i)} \mid x_t^{(i)}, c)}{\pi_{\theta_\text{old}}^\text{CPS}(x_{t-\Delta t}^{(i)} \mid x_t^{(i)}, c)} = \exp\left(-\frac{\Vert x_{t-\Delta t}^{(i)} - \mu_\theta^\text{CPS}\Vert^2 - \Vert x_{t-\Delta t}^{(i)} - \mu_{\theta_\text{old}}^\text{CPS}\Vert^2}{2\sigma_t^2}\right)$$
 
 ---
@@ -101,5 +106,5 @@ Identical to whichever base method (FlowGRPO / DanceGRPO / MixGRPO) CPS is plugg
 ## Limitations
 
 - Addresses artifact problem only; does not fix ratio imbalance (→ GRPO-Guard) or SDE cost (→ MixGRPO).
-- Stochasticity schedule $\{\sigma_t\}$ requires tuning.
+- Stochasticity schedule $\lbrace\sigma_t\rbrace$ requires tuning.
 - Assumes the flow model is well-trained; degraded base models may still produce artifacts.

@@ -24,7 +24,7 @@ GRPO from LLMs achieves large alignment gains via group-relative policy gradient
 ## Setting
 
 - **Model**: flow matching (rectified flow) with velocity predictor $v_\theta(x_t, t, c)$.
-- **ODE** (inference): $dx_t = v_\theta(x_t, t, c)\, dt$, integrated from $t=1$ to $t=0$ with $N$ Euler steps.
+- **ODE** (inference): $dx_t = v_\theta(x_t, t, c) dt$, integrated from $t=1$ to $t=0$ with $N$ Euler steps.
 - **Group size** $N_g$ (typically 8–16): number of images generated per prompt.
 - **Reward model**: $r(x_0, c)$, black-box scalar.
 
@@ -33,7 +33,8 @@ GRPO from LLMs achieves large alignment gains via group-relative policy gradient
 ## Sampling (inference after training)
 
 Standard flow ODE (unchanged from pretrained model):
-$$x_{t - \Delta t} = x_t - v_\theta(x_t, t, c)\,\Delta t, \quad t = 1, 1{-}\Delta t, \ldots, \Delta t$$
+
+$$x_{t - \Delta t} = x_t - v_\theta(x_t, t, c)\Delta t, \quad t = 1, 1{-}\Delta t, \ldots, \Delta t$$
 with $x_1 \sim \mathcal{N}(0,I)$.
 
 ---
@@ -43,27 +44,32 @@ with $x_1 \sim \mathcal{N}(0,I)$.
 To enable GRPO during **training**, replace the ODE with a stochastic variant that has the **same marginal** $p_t(x_t)$ at every $t$.
 
 Using the Fokker-Planck / continuity equation duality, the equivalent SDE is:
-$$dx_t = \underbrace{\left[v_\theta(x_t,t,c) + \frac{s_t^2}{2}\,\nabla_{x_t}\log p_t(x_t)\right]}_{\text{drift}}\, dt + s_t\, dW_t$$
+
+$$dx_t = \underbrace{\left[v_\theta(x_t,t,c) + \frac{s_t^2}{2}\nabla_{x_t}\log p_t(x_t)\right]}_{\text{drift}} dt + s_t dW_t$$
 
 The score $\nabla_{x_t} \log p_t(x_t)$ is approximated via Tweedie's formula:
-$$\nabla_{x_t} \log p_t(x_t) \approx \frac{\hat x_0(x_t, t) - x_t}{t^2}, \quad \hat x_0 = x_t - t\, v_\theta(x_t, t, c)$$
+
+$$\nabla_{x_t} \log p_t(x_t) \approx \frac{\hat x_0(x_t, t) - x_t}{t^2}, \quad \hat x_0 = x_t - t v_\theta(x_t, t, c)$$
 
 **Euler-Maruyama discretisation** (one step from $t$ to $t - \Delta t$):
-$$x_{t-\Delta t} = x_t - v_\theta(x_t,t,c)\,\Delta t + \frac{s_t^2 \Delta t}{2t^2}\left(\hat x_0 - x_t\right) + s_t\sqrt{\Delta t}\,\epsilon_t, \quad \epsilon_t \sim \mathcal{N}(0,I)$$
 
-This step is a **Gaussian** with mean $\mu_\theta(x_t, t)$ and variance $s_t^2 \Delta t\, I$:
-$$\pi_\theta(x_{t-\Delta t} \mid x_t, c) = \mathcal{N}\left(x_{t-\Delta t};\; \mu_\theta(x_t,t,c),\; s_t^2\,\Delta t\, I\right)$$
+$$x_{t-\Delta t} = x_t - v_\theta(x_t,t,c)\Delta t + \frac{s_t^2 \Delta t}{2t^2}\left(\hat x_0 - x_t\right) + s_t\sqrt{\Delta t}\epsilon_t, \quad \epsilon_t \sim \mathcal{N}(0,I)$$
+
+This step is a **Gaussian** with mean $\mu_\theta(x_t, t)$ and variance $s_t^2 \Delta t I$:
+
+$$\pi_\theta(x_{t-\Delta t} \mid x_t, c) = \mathcal{N}\left(x_{t-\Delta t}; \mu_\theta(x_t,t,c), s_t^2\Delta t I\right)$$
 
 The log-likelihood (used in the importance ratio) is:
-$$\log \pi_\theta(x_{t-\Delta t} \mid x_t, c) = -\frac{\Vert x_{t-\Delta t} - \mu_\theta(x_t,t,c)\Vert^2}{2\, s_t^2\,\Delta t} + \text{const}$$
+
+$$\log \pi_\theta(x_{t-\Delta t} \mid x_t, c) = -\frac{\Vert x_{t-\Delta t} - \mu_\theta(x_t,t,c)\Vert^2}{2 s_t^2\Delta t} + \text{const}$$
 
 ---
 
 ## Key contribution 2 — Group advantage estimation
 
-Generate $N_g$ images $\{x_0^{(i)}\}_{i=1}^{N_g}$ for the **same** prompt $c$ using the SDE sampler:
+Generate $N_g$ images $\lbrace x_0^{(i)}\rbrace_{i=1}^{N_g}$ for the **same** prompt $c$ using the SDE sampler:
 
-$$\hat A^{(i)} = \frac{r^{(i)} - \overline r}{\text{std}(\{r^{(j)}\}) + \delta}, \quad \overline r = \frac{1}{N_g}\sum_{j=1}^{N_g} r^{(j)}$$
+$$\hat A^{(i)} = \frac{r^{(i)} - \overline r}{\text{std}(\lbrace r^{(j)}\rbrace) + \delta}, \quad \overline r = \frac{1}{N_g}\sum_{j=1}^{N_g} r^{(j)}$$
 
 This is the standard GRPO advantage: group-normalised, zero-mean, unit-variance (approximately). It replaces the raw reward $r^{(i)}$ used in DDPO.
 
@@ -74,11 +80,12 @@ This is the standard GRPO advantage: group-normalised, zero-mean, unit-variance 
 PPO-clipped GRPO objective summed over all $T$ training steps:
 
 $$\boxed{
-\mathcal{L}_\text{FlowGRPO}(\theta) = -\mathbb{E}_{c,\{x_0^{(i)}\}}\left[\frac{1}{N_g}\sum_{i=1}^{N_g} \frac{1}{T}\sum_{t=1}^{T} \min\left(\rho_t^{(i)}\hat A^{(i)},\; \text{clip}\left(\rho_t^{(i)}, 1{-}\epsilon, 1{+}\epsilon\right)\hat A^{(i)}\right)\right] + \beta\, D_\text{KL}(\pi_\theta \Vert \pi_\text{ref})
+\mathcal{L}_\text{FlowGRPO}(\theta) = -\mathbb{E}_{c,\lbrace x_0^{(i)}\rbrace}\left[\frac{1}{N_g}\sum_{i=1}^{N_g} \frac{1}{T}\sum_{t=1}^{T} \min\left(\rho_t^{(i)}\hat A^{(i)}, \text{clip}\left(\rho_t^{(i)}, 1{-}\epsilon, 1{+}\epsilon\right)\hat A^{(i)}\right)\right] + \beta D_\text{KL}(\pi_\theta \Vert \pi_\text{ref})
 }$$
 
 where:
-$$\rho_t^{(i)} = \frac{\pi_\theta(x_{t-\Delta t}^{(i)} \mid x_t^{(i)}, c)}{\pi_{\theta_\text{old}}(x_{t-\Delta t}^{(i)} \mid x_t^{(i)}, c)} = \exp\left(-\frac{\Vert x_{t-\Delta t}^{(i)} - \mu_\theta\Vert^2 - \Vert x_{t-\Delta t}^{(i)} - \mu_{\theta_\text{old}}\Vert^2}{2\,s_t^2\,\Delta t}\right)$$
+
+$$\rho_t^{(i)} = \frac{\pi_\theta(x_{t-\Delta t}^{(i)} \mid x_t^{(i)}, c)}{\pi_{\theta_\text{old}}(x_{t-\Delta t}^{(i)} \mid x_t^{(i)}, c)} = \exp\left(-\frac{\Vert x_{t-\Delta t}^{(i)} - \mu_\theta\Vert^2 - \Vert x_{t-\Delta t}^{(i)} - \mu_{\theta_\text{old}}\Vert^2}{2s_t^2\Delta t}\right)$$
 
 ---
 
