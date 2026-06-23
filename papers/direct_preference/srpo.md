@@ -10,7 +10,7 @@
 | **Authors** | Xiangwei Shen, Zhimin Li, Zhantao Yang, Shiyi Zhang, Yingfang Zhang, Donghao Li, Chunyu Wang, Qinglin Lu, Yansong Tang |
 | **Affiliation** | Tencent Hunyuan; CUHK-Shenzhen; Tsinghua University |
 | **GitHub** | https://github.com/Tencent-Hunyuan/SRPO |
-| **Paradigm** | **Decoupled** — no SDE, no multi-step denoising gradients; single-step closed-form recovery |
+| **Paradigm** | **Direct Preference** — no SDE, no multi-step denoising gradients; single-step closed-form recovery |
 | **Cites** | DDPO, FlowGRPO, DanceGRPO, ReFL, DRaFT |
 | **Cited by** | HunyuanImage 3.0 pipeline (MixGRPO → SRPO → ReDA stages) |
 
@@ -18,7 +18,7 @@
 
 ## Context
 
-SRPO introduces two independent innovations that can be used separately or together: (1) **Direct-Align**, a training procedure that aligns the model to a reward using a closed-form noise-recovery step instead of multi-step rollouts; and (2) the **SRPO Reward**, a self-normalising relative score that does not require periodic re-training of the reward model. Both target FLUX.1-dev (flow matching), and both are entirely decoupled — no SDE sampler, no GRPO importance ratio, no KL divergence against a frozen reference.
+SRPO introduces two independent innovations that can be used separately or together: (1) **Direct-Align**, a training procedure that aligns the model to a reward using a closed-form noise-recovery step instead of multi-step rollouts; and (2) the **SRPO Reward**, a self-normalising relative score that does not require periodic re-training of the reward model. Both target FLUX.1-dev (flow matching), and both are entirely direct-preference — no SDE sampler, no GRPO importance ratio, no KL divergence against a frozen reference.
 
 ---
 
@@ -37,6 +37,8 @@ $$\hat{x}_0 = \frac{x_t - t\epsilon_\text{gt}}{1-t}$$
 This uses the same Tweedie formula as [NOTATION.md §3](../NOTATION.md), but substitutes the **known** $\epsilon_\text{gt}$ instead of the network's prediction — making recovery exact and bypassing multi-step denoising entirely.
 
 **Why this works**: The gradient $\partial r / \partial \theta$ passes through only **one network call** $v_\theta(x_t, t, c)$. There is no rollout, no iterative denoising chain, no trajectory storage. The reward gradient flows back through a single velocity prediction, making this $T\times$ cheaper than full-chain backpropagation. Because $t$ is sampled uniformly over $[0,1]$, every noise level (including early high-noise steps) participates in training — all timesteps are aligned, not just the last few.
+
+**Result**: Direct-Align gives SRPO **75× greater training efficiency than DanceGRPO** (§4.3), fine-tuning FLUX.1-dev to convergence in **~10 min on 32 H20 GPUs** (Fig. 1) while aligning all timesteps. On its own, though, it is not enough — the Fig. 9(d) ablation shows removing it "reduced realism and increased vulnerability to reward hacking," and Direct-Align alone reaches only **5.9% realism**, which Problem 2's relative reward lifts to 38.9%.
 
 ### Training procedure (Direct-Align)
 
@@ -70,6 +72,8 @@ where:
 - $C_- = \mathrm{embed}(c_-)$: embedding of a *negative* condition, e.g., *"an AI-generated image"*
 
 **Why this works**: The reward is a **difference** between two alignment scores. If the policy improves by becoming more photorealistic, $f_\text{img}(x_0)^\top C_+$ increases while $f_\text{img}(x_0)^\top C_-$ decreases — the difference magnifies the signal. Crucially, the relative score is computed entirely by the frozen reward model's embedding function: no additional training is needed. Changing the optimisation target (e.g., from photorealism to oil-painting style) requires only swapping $(c_+, c_-)$.
+
+**Result**: The relative reward drives SRPO's headline human-evaluation gains on FLUX.1-dev — excellent-rate for **Realism 8.2% → 38.9%** (3.7×), **Aesthetics 9.8% → 40.5%** (3.1×), **Overall 5.3% → 29.4%** (Tab. 1, Fig. 4) — and "effectively prevents reward hacking" vs absolute multi-reward setups (Fig. 7). Benchmark scores: Aesthetic 6.194, PickScore 23.040, ImageReward 1.118, HPS 0.289.
 
 | Property | Effect |
 |---|---|

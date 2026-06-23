@@ -9,7 +9,7 @@
 | **Venue** | — (preprint) |
 | **Authors** | Shuchen Xue, Chongjian Ge, Shilong Zhang, Yichen Li, Zhi-Ming Ma |
 | **GitHub** | https://github.com/scxue/advantage_weighted_matching |
-| **Paradigm** | **Decoupled** — flow matching MSE reweighted by advantage; no SDE, no importance ratio |
+| **Paradigm** | **Direct Preference** — flow matching MSE reweighted by advantage; no SDE, no importance ratio |
 | **Cites** | DDPO (2305.13301), FlowGRPO (2505.05470), flow matching, LLM pretraining alignment |
 
 ---
@@ -37,6 +37,8 @@ The difference is $(x_{t-1} - x_0)$, the noise residual at step $t-1$. This resi
 $$\mathcal{L}_\text{AWM}(\theta) = \mathbb{E}_{t,\epsilon}\left[\frac{1}{N}\sum_{i=1}^{N} w(t)\hat{A}^{(i)}\left\Vert{}v_\theta(x_t^{(i)}, t, c) - u_t^{(i)}\right\Vert^2\right]$$
 
 **Why this works**: The clean target eliminates the noise residual variance completely. The advantage weighting provides the RL signal: positive-advantage samples push $v_\theta$ toward the target (reinforcing the behaviour), while negative-advantage samples push $v_\theta$ away from the target (suppressing the behaviour). Crucially, this is the **exact same loss** as flow matching pretraining — but with advantage weighting added. No architectural changes, no SDE, no importance ratio.
+
+**Result**: AWM **matches FlowGRPO on GenEval at ~24× speedup** (SD3.5-M), with comparable-or-better PickScore on FLUX and significantly improved OCR accuracy — the clean target removes the noisy-IS-loss variance without an SDE or reference lookup. See the consolidated [Results](#results) table below.
 
 ---
 
