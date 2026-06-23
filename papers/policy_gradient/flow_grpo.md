@@ -11,7 +11,7 @@
 | **GitHub** | https://github.com/yifan123/flow_grpo |
 | **Paradigm** | **Policy Gradient** — per-step Gaussian log-prob required; must use SDE sampler |
 | **Cites** | DDPO, GRPO (DeepSeek-R1), PPO, flow matching (Lipman et al.), SD3.5-M, FLUX |
-| **Cited by** | MixGRPO, CPS, DiffusionNFT, AWM, GRPO-Guard, DGPO |
+| **Cited by** | MixGRPO, CPS, DiffusionNFT, AWM, GRPO-Guard, DGPO, FlowDPPO |
 
 ---
 

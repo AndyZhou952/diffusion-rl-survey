@@ -76,7 +76,9 @@ nav:
       - FlowGRPO-CPS: papers/policy_gradient/cps.md
       - GRPO-Guard: papers/policy_gradient/grpo_guard.md
       - UniGRPO: papers/policy_gradient/uni_grpo.md
+      - FlowDPPO: papers/policy_gradient/flow_dppo.md
   - Direct Preference:
+      - Diffusion-DPO: papers/direct_preference/diffusion_dpo.md
       - SRPO: papers/direct_preference/srpo.md
       - DiffusionNFT: papers/direct_preference/diffusion_nft.md
       - AWM: papers/direct_preference/awm.md

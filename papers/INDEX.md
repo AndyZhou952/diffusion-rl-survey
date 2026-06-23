@@ -18,7 +18,7 @@ This taxonomy follows the **VeRL-Omni** *ubiquitous language* (`verl_omni/traine
 
 Reference: [Flow-Factory algorithm taxonomy](https://github.com/X-GenGroup/Flow-Factory/blob/main/guidance/algorithms.md)
 
-Historical precursors (no dedicated files in this repo): **DDPO** ([2305.13301](https://arxiv.org/abs/2305.13301), ICLR 2024) — first diffusion MDP; **Diffusion-DPO** ([2311.12908](https://arxiv.org/abs/2311.12908), CVPR 2024) — offline DPO via diffusion ELBO.
+Historical precursor (no dedicated file in this repo): **DDPO** ([2305.13301](https://arxiv.org/abs/2305.13301), ICLR 2024) — first diffusion MDP, root of the policy-gradient line. (**Diffusion-DPO**, the root of the direct-preference line, now has a dedicated page: [direct_preference/diffusion_dpo.md](direct_preference/diffusion_dpo.md).)
 
 ---
 
@@ -26,6 +26,7 @@ Historical precursors (no dedicated files in this repo): **DDPO** ([2305.13301](
 
 | Short name | Full title | arXiv | Date | Venue | Notes file |
 |---|---|---|---|---|---|
+| **Diffusion-DPO** | Diffusion Model Alignment Using Direct Preference Optimization | [2311.12908](https://arxiv.org/abs/2311.12908) | 2023-11-21 | CVPR 2024 | [direct_preference/diffusion_dpo.md](direct_preference/diffusion_dpo.md) |
 | **FlowGRPO** | Flow-GRPO: Training Flow Matching Models via Online RL | [2505.05470](https://arxiv.org/abs/2505.05470) | 2025-05-08 | NeurIPS 2025 | [policy_gradient/flow_grpo.md](policy_gradient/flow_grpo.md) |
 | **SRPO** | Directly Aligning the Full Diffusion Trajectory with Fine-Grained Human Preference | [2509.06942](https://arxiv.org/abs/2509.06942) | 2025-09-08 | — | [direct_preference/srpo.md](direct_preference/srpo.md) |
 | **DanceGRPO** | DanceGRPO: Unleashing GRPO on Visual Generation | [2505.07818](https://arxiv.org/abs/2505.07818) | 2025-05-12 | — | [policy_gradient/dance_grpo.md](policy_gradient/dance_grpo.md) |
@@ -36,6 +37,7 @@ Historical precursors (no dedicated files in this repo): **DDPO** ([2305.13301](
 | **DGPO** | Reinforcing Diffusion Models by Direct Group Preference Optimization | [2510.08425](https://arxiv.org/abs/2510.08425) | 2025-10-09 | — | [direct_preference/dgpo.md](direct_preference/dgpo.md) |
 | **GRPO-Guard** | GRPO-Guard: Mitigating Implicit Over-Optimization in Flow Matching via Regulated Clipping | [2510.22319](https://arxiv.org/abs/2510.22319) | 2025-10-25 | — | [policy_gradient/grpo_guard.md](policy_gradient/grpo_guard.md) |
 | **UniGRPO** | UniGRPO: Unified Policy Optimization for Reasoning-Driven Visual Generation | [2603.23500](https://arxiv.org/abs/2603.23500) | 2026-03-25 | — | [policy_gradient/uni_grpo.md](policy_gradient/uni_grpo.md) |
+| **FlowDPPO** | Flow-DPPO: Divergence Proximal Policy Optimization for Flow Matching Models | [2606.11025](https://arxiv.org/abs/2606.11025) | 2026-06-09 | — | [policy_gradient/flow_dppo.md](policy_gradient/flow_dppo.md) |
 
 ---
 
@@ -50,7 +52,7 @@ DDPO (2023-05, policy-gradient precursor — no file in this repo)
 GRPO/PPO (DeepSeek-R1, January 2025 — not in this repo)
   → FlowGRPO, DanceGRPO, MixGRPO, DGPO
 
-Diffusion-DPO (2023-11, direct-preference precursor — no file in this repo)
+Diffusion-DPO (2023-11, CVPR 2024) — root of the direct-preference line
   → DGPO (extends group-level DPO to online setting)
   → [offline DPO comparison baseline for policy-gradient methods]
 
@@ -64,7 +66,13 @@ MixGRPO (2025-07)
   → [cited by later efficiency comparisons]
 
 CPS (2025-09)
-  → [plug-in fix for policy-gradient methods; no downstream dependants yet]
+  → FlowDPPO
+
+GRPO-Guard (2025-10)
+  → FlowDPPO (shares the ratio-pathology diagnosis; resolves it via divergence mask instead of RatioNorm)
+
+FlowDPPO (2026-06) — extends FlowGRPO; replaces PPO ratio clipping with an exact Gaussian-KL divergence mask
+  → [no downstream dependants in this repo yet]
 
 SRPO (2025-09, Tencent)
   → [cited by: HunyuanImage 3.0 pipeline (stage 4); no downstream dependants in this repo yet]

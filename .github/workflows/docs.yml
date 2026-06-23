@@ -27,6 +27,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Enables GitHub Pages on first run if it isn't already (avoids the
+      # "Ensure GitHub Pages has been enabled" 404 on the deploy step).
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

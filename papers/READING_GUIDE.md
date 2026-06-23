@@ -163,6 +163,12 @@ All direct-preference methods can use any ODE sampler (DDIM, DPM-Solver++) for g
 
 ---
 
+### Diffusion-DPO — the root of the branch
+
+[`direct_preference/diffusion_dpo.md`](direct_preference/diffusion_dpo.md)
+
+**Read first for the lineage.** Diffusion-DPO (CVPR 2024) predates the GRPO wave and is where the direct-preference idea begins: it brings DPO from LLMs to diffusion by replacing the intractable likelihood with the **ELBO**, turning the preference objective into a difference of denoising MSEs between the current and a frozen reference model — evaluated on the final image, with no SDE and no importance ratio. Every paper below is a reaction to it: DGPO makes it online and group-level, AWM/DiffusionNFT drop the preference loss for advantage-weighted/contrastive matching, SRPO drops the reference model.
+
 ### AWM — the simplest conceptual break
 
 **Read first in the direct-preference branch.** [`direct_preference/awm.md`](direct_preference/awm.md)
@@ -254,6 +260,12 @@ FlowGRPO
 
 **Read after** the full policy-gradient chain and at least one direct-preference method. UniGRPO targets **unified multimodal models** — transformers that generate both text reasoning chains and images in a single forward pass. It takes the FlowGRPO SDE approach (with a sliding window, following MixGRPO), applies RatioNorm from GRPO-Guard, removes CFG from training, and adds a velocity-space MSE regulariser. The key novelty is treating text and image generation as a single MDP with a shared terminal reward, so a better reasoning chain and a better image are jointly optimised.
 
+### FlowDPPO — exact-KL trust region instead of ratio clipping (2026)
+
+[`policy_gradient/flow_dppo.md`](policy_gradient/flow_dppo.md)
+
+**Read after** FlowGRPO and GRPO-Guard. FlowDPPO is a minimal add-on to FlowGRPO that attacks the same ratio pathology GRPO-Guard diagnoses, but from the opposite direction: where GRPO-Guard *re-centres* the importance ratio so PPO clipping works, FlowDPPO *discards clipping altogether*. Its observation is that the per-step flow policy is Gaussian with the same variance for old and new, so the exact KL between transitions is cheap and noise-free — a far better trust-region signal than a single-sample ratio. It then masks (zeroes the gradient on) only the transitions that both exceed a divergence threshold and keep moving away from the rollout policy. Reported to give higher reward at better KL efficiency and to enable stable multi-epoch training where clipping degrades.
+
 ### academia.md — the 2025–2026 long tail
 
 [`academia.md`](academia.md)
@@ -300,6 +312,7 @@ flow_grpo
 
 | Paper | What it keeps from predecessor | What it changes |
 |---|---|---|
+| **Diffusion-DPO** | DPO from LLMs | ELBO likelihood proxy → pairwise denoising-MSE margin (root of Direct Preference) |
 | **FlowGRPO** | GRPO from LLMs (verbatim) | ODE→SDE conversion; group advantage |
 | **MixGRPO** | FlowGRPO SDE + objective | SDE/gradient confined to sliding window |
 | **GRPO-Guard** | FlowGRPO sampling (unchanged) | RatioNorm + gradient reweighting in objective |
@@ -310,3 +323,4 @@ flow_grpo
 | **DGPO** | GRPO group generation | Replaces IS ratio with ELBO preference |
 | **SRPO** | Reward evaluation on $x_0$ | Closed-form recovery; relative reward (no reference) |
 | **UniGRPO** | FlowGRPO SDE + RatioNorm + window | Joint text+image MDP; velocity-space KL |
+| **FlowDPPO** | FlowGRPO SDE + ratio + group advantage | Replaces PPO clip with an exact Gaussian-KL asymmetric divergence mask |

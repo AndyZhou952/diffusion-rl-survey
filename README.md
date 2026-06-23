@@ -33,15 +33,17 @@ diffusion-rl-survey/
     │   ├── mix_grpo.md           ← MixGRPO + Flash variant (Jul 2025)
     │   ├── cps.md                ← FlowGRPO-CPS — noise-artifact fix (Sep 2025)
     │   ├── grpo_guard.md         ← GRPO-Guard — anti-reward-hacking (Oct 2025)
-    │   └── uni_grpo.md           ← UniGRPO — reasoning-driven generation (Mar 2026)
+    │   ├── uni_grpo.md           ← UniGRPO — reasoning-driven generation (Mar 2026)
+    │   └── flow_dppo.md          ← FlowDPPO — exact-KL divergence mask vs PPO clip (Jun 2026)
     └── direct_preference/        ← preference / MSE loss on final samples (solver-agnostic)
+        ├── diffusion_dpo.md      ← Diffusion-DPO (Nov 2023, CVPR 2024) — root of the family; ELBO preference
         ├── srpo.md               ← SRPO (Sep 2025) — noise-prior recovery + semantic relative reward
         ├── diffusion_nft.md      ← DiffusionNFT — forward-process RL (Sep 2025)
         ├── awm.md                ← AWM — advantage-weighted matching loss (Sep 2025)
         └── dgpo.md               ← DGPO — group preference, ODE-compatible (Oct 2025)
 ```
 
-Historical precursors (no dedicated files): **DDPO** (ICLR 2024, [2305.13301](https://arxiv.org/abs/2305.13301)) — first diffusion MDP, root of the policy-gradient line; **Diffusion-DPO** (CVPR 2024, [2311.12908](https://arxiv.org/abs/2311.12908)) — offline DPO via diffusion ELBO, root of the direct-preference line.
+Historical precursor (no dedicated file): **DDPO** (ICLR 2024, [2305.13301](https://arxiv.org/abs/2305.13301)) — first diffusion MDP, root of the policy-gradient line. The root of the direct-preference line, **Diffusion-DPO** (CVPR 2024), now has its own page: [diffusion_dpo.md](papers/direct_preference/diffusion_dpo.md).
 
 ---
 
@@ -119,6 +121,7 @@ Methods: **Diffusion-DPO, DGPO, DiffusionNFT, AWM, SRPO**
 2025-10  DGPO           — group preference via ELBO; ODE-compatible; ~20× faster
 2025-10  GRPO-Guard     — ratio normalisation + gradient reweighting  [policy-gradient fix]
 2026-03  UniGRPO        — unified policy optimisation for reasoning-driven visual generation
+2026-06  FlowDPPO       — replaces PPO ratio clipping with an exact Gaussian-KL divergence mask  [extends FlowGRPO]
 ```
 
 See `papers/academia.md` for 20+ additional algorithm papers from late 2025–2026 (BranchGRPO, TreeGRPO, DenseGRPO, DiverseGRPO, DRIFT, TDM-R1, and more).

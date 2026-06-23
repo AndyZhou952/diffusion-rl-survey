@@ -8,11 +8,18 @@ tracked in papers/INDEX.md and papers/academia.md, and writes a Markdown
 candidate list (for a GitHub issue) to the path given by --out (default:
 candidates.md).
 
-If the environment variable ANTHROPIC_API_KEY is set, each candidate is given a
-one-line "problem statement" and a suggested paradigm (Policy Gradient / Direct
-Preference) drafted by the latest Claude model. Without the key, the AI step is
-skipped and the raw arXiv abstract snippet is used instead — the script always
-produces a usable list.
+If an LLM key is configured, each candidate is given a one-line "problem
+statement" and a suggested paradigm (Policy Gradient / Direct Preference) via an
+**OpenAI-compatible** chat/completions call, so any provider works — OpenAI,
+DeepSeek, Google Gemini (OpenAI-compat endpoint), MiMo, Anthropic (OpenAI-compat
+endpoint), OpenRouter, a self-hosted vLLM, etc. Configured by env:
+
+    LLM_API_KEY   the key (required to enable the AI step; if unset → skipped)
+    LLM_BASE_URL  OpenAI-compatible base URL (default: https://api.openai.com/v1)
+    LLM_MODEL     model id (default: gpt-4o-mini)
+
+Without the key the AI step is skipped and the raw arXiv abstract snippet is used
+instead — the script always produces a usable list.
 
 Stdlib only (urllib, xml, re, json) so it runs in CI with no extra deps.
 """
@@ -88,13 +95,22 @@ def arxiv_search(term: str, since: datetime, max_results: int = 30) -> list[dict
 
 
 def ai_annotate(cand: dict) -> dict | None:
-    """Optional: draft a one-line problem + paradigm via the Claude API."""
-    key = os.environ.get("ANTHROPIC_API_KEY")
+    """Optional: draft a one-line problem + paradigm via any OpenAI-compatible API.
+
+    Provider is chosen entirely by env vars (LLM_API_KEY / LLM_BASE_URL /
+    LLM_MODEL), so the same code path works for OpenAI, DeepSeek, Gemini's
+    OpenAI-compat endpoint, MiMo, Anthropic's OpenAI-compat endpoint, OpenRouter,
+    self-hosted vLLM, etc. Best-effort: any failure returns None and the caller
+    falls back to the raw abstract.
+    """
+    key = os.environ.get("LLM_API_KEY")
     if not key:
         return None
+    base = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
     prompt = (
         "You are triaging a paper for a survey of RL algorithms for image/video "
-        "diffusion/flow generation. Given the title and abstract, reply with a "
+        "diffusion/flow generation. Given the title and abstract, reply with ONLY a "
         "compact JSON object: {\"problem\": \"<=15 words\", \"paradigm\": "
         "\"Policy Gradient|Direct Preference|unsure\", \"relevant\": true|false}. "
         "Policy Gradient = PPO-clip over the trajectory; Direct Preference = "
@@ -102,23 +118,23 @@ def ai_annotate(cand: dict) -> dict | None:
         f"Title: {cand['title']}\nAbstract: {cand['abstract']}"
     )
     body = json.dumps({
-        "model": "claude-opus-4-8",
-        "max_tokens": 200,
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0,
+        "max_tokens": 200,
     }).encode()
     req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
+        f"{base}/chat/completions",
         data=body,
         headers={
-            "x-api-key": key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
         },
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.load(resp)
-        text = data["content"][0]["text"]
+        text = data["choices"][0]["message"]["content"]
         return json.loads(re.search(r"\{.*\}", text, re.S).group(0))
     except Exception as exc:  # noqa: BLE001 — AI step is best-effort
         print(f"[warn] AI annotation failed: {exc}", file=sys.stderr)

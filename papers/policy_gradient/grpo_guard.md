@@ -10,6 +10,7 @@
 | **Authors** | Jing Wang, Jiajun Liang, Jie Liu, Henglin Liu, Gongye Liu, Jun Zheng, Wanyuan Pang, Ao Ma, Zhenyu Xie, Xintao Wang, Meng Wang, Pengfei Wan, Xiaodan Liang |
 | **Paradigm** | **Policy Gradient** — modifier applied inside the GRPO objective; no change to sampling |
 | **Cites** | FlowGRPO (2505.05470), DanceGRPO (2505.07818), PPO, GRPO (DeepSeek-R1) |
+| **Cited by** | FlowDPPO |
 
 ---
 
